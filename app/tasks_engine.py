@@ -117,7 +117,7 @@ def compute_desired_auto_tasks(
             missing.append("동/호")
         if p.get("area") in (None, ""):
             missing.append("면적")
-        if not unit_type and str(p.get("tab")) in ("아파트단지1", "아파트단지2"):
+        if not unit_type and str(p.get("tab")) in ("봉담자이 프라이드시티", "힐스테이트봉담프라이드시티"):
             missing.append("타입")
         if not str(p.get("floor") or "").strip():
             missing.append("층")

@@ -26,11 +26,16 @@ DB_PATH = BASE_DIR / "ledger.db"
 
 
 # UI 탭(요구사항 그대로)
-PROPERTY_TABS = ["아파트단지1", "아파트단지2", "상가", "단독주택"]
+PROPERTY_TABS = ["봉담자이 프라이드시티", "힐스테이트봉담프라이드시티", "상가", "단독주택"]
 
 
 # 탭 -> 고정 단지명(아파트단지는 고정)
 TAB_COMPLEX_NAME = {
+    "봉담자이 프라이드시티": "봉담자이 프라이드시티",
+    "힐스테이트봉담프라이드시티": "힐스테이트봉담프라이드시티",
+}
+
+LEGACY_TAB_MAP = {
     "아파트단지1": "봉담자이 프라이드시티",
     "아파트단지2": "힐스테이트봉담프라이드시티",
 }
@@ -181,6 +186,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
             "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
         },
     )
+
+    # Legacy tab values migration
+    for old_name, new_name in LEGACY_TAB_MAP.items():
+        conn.execute("UPDATE properties SET tab=? WHERE tab=?", (new_name, old_name))
+        conn.execute("UPDATE customer_requests SET preferred_tab=? WHERE preferred_tab=?", (new_name, old_name))
 
     conn.commit()
     conn.close()
