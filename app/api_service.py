@@ -54,8 +54,12 @@ class LedgerAPIHandler(BaseHTTPRequestHandler):
                 return
 
             if path == "/tasks":
-                status = qs.get("status", [None])[0]
-                self._send(HTTPStatus.OK, storage.list_tasks(status=status))
+                status = (qs.get("status", [""])[0] or "").strip().upper()
+                include_done = status != "OPEN"
+                tasks = storage.list_tasks(include_done=include_done)
+                if status in {"OPEN", "DONE"}:
+                    tasks = [task for task in tasks if str(task.get("status", "")).upper() == status]
+                self._send(HTTPStatus.OK, tasks)
                 return
 
             if path.startswith("/matching/"):
@@ -135,7 +139,7 @@ class LedgerAPIHandler(BaseHTTPRequestHandler):
                     storage.list_customers(include_deleted=False),
                     photos=storage.list_photos_all(),
                     viewings=storage.list_viewings(),
-                    tasks=storage.list_tasks(status="OPEN"),
+                    tasks=storage.list_tasks(include_done=False),
                     settings=settings,
                 )
                 self._send(HTTPStatus.OK, {"ok": ok, "message": message, "sync_dir": str(settings.sync_dir)})

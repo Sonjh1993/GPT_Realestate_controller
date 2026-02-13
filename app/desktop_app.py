@@ -305,165 +305,165 @@ class LedgerDesktopApp:
                 ),
             )
 
-def refresh_tasks(self):
-    # 자동 태스크 최신화
-    try:
-        reconcile_auto_tasks()
-    except Exception:
-        pass
-
-    rows = list_tasks(include_done=False, limit=400)
-    self.dash_vars.get("tasks_open", tk.StringVar()).set(str(len(rows)))
-
-    for i in self.tasks_tree.get_children():
-        self.tasks_tree.delete(i)
-
-    for r in rows:
-        entity = ""
-        et = str(r.get("entity_type") or "").strip()
-        eid = r.get("entity_id")
-        if et and eid is not None:
-            entity = f"{et}#{eid}"
-
-        self.tasks_tree.insert(
-            "",
-            "end",
-            values=(
-                r.get("id"),
-                r.get("due_at") or "",
-                r.get("title") or "",
-                entity,
-                r.get("status") or "",
-            ),
-        )
-
-def _selected_task_id(self) -> int | None:
-    sel = self.tasks_tree.selection()
-    if not sel:
-        return None
-    try:
-        return int(self.tasks_tree.item(sel[0], "values")[0])
-    except Exception:
-        return None
-
-def mark_selected_task_done(self):
-    tid = self._selected_task_id()
-    if tid is None:
-        return
-    try:
-        mark_task_done(tid)
-    except Exception as exc:
-        messagebox.showerror("오류", f"완료 처리 실패: {exc}")
-        return
-    self.refresh_tasks()
-    self.refresh_dashboard()
-
-def open_selected_task_related(self):
-    tid = self._selected_task_id()
-    if tid is None:
-        return
-    row = None
-    try:
-        # list_tasks는 필터가 있어 get_task 대신 재조회
-        tasks = list_tasks(include_done=True, limit=500)
-        for t in tasks:
-            if int(t.get("id")) == tid:
-                row = t
-                break
-    except Exception:
-        row = None
-
-    if not row:
-        return
-
-    et = str(row.get("entity_type") or "").strip()
-    eid = row.get("entity_id")
-
-    try:
-        if et == "PROPERTY" and eid is not None:
-            self.open_property_detail(int(eid))
-        elif et == "CUSTOMER" and eid is not None:
-            self.open_customer_detail(int(eid))
-        elif et == "VIEWING" and eid is not None:
-            v = get_viewing(int(eid))
-            if v and v.get("property_id"):
-                self.open_property_detail(int(v.get("property_id")))
-        else:
-            messagebox.showinfo("안내", "연결된 대상이 없는 할 일입니다.")
-    except Exception as exc:
-        messagebox.showerror("오류", f"관련 열기 실패: {exc}")
-
-def _on_double_click_task(self, _event):
-    self.open_selected_task_related()
-
-def open_add_task_window(self, *, default_entity_type: str = "", default_entity_id: int | None = None):
-    win = tk.Toplevel(self.root)
-    win.title("새 할 일 추가")
-    win.geometry("520x320")
-
-    vars_ = {
-        "title": tk.StringVar(value=""),
-        "due_at": tk.StringVar(value=""),
-        "entity_type": tk.StringVar(value=default_entity_type),
-        "entity_id": tk.StringVar(value=str(default_entity_id) if default_entity_id is not None else ""),
-        "note": tk.StringVar(value=""),
-    }
-
-    frm = ttk.Frame(win)
-    frm.pack(fill="both", expand=True, padx=12, pady=12)
-
-    def row(r, label, widget):
-        ttk.Label(frm, text=label).grid(row=r, column=0, padx=6, pady=6, sticky="e")
-        widget.grid(row=r, column=1, padx=6, pady=6, sticky="w")
-
-    row(0, "제목(필수)", ttk.Entry(frm, textvariable=vars_["title"], width=44))
-    row(1, "기한(선택, YYYY-MM-DD HH:MM)", ttk.Entry(frm, textvariable=vars_["due_at"], width=44))
-
-    et_combo = ttk.Combobox(frm, textvariable=vars_["entity_type"], values=["", "PROPERTY", "CUSTOMER", "VIEWING"], width=41, state="readonly")
-    row(2, "연결대상(선택)", et_combo)
-    row(3, "대상 ID(선택)", ttk.Entry(frm, textvariable=vars_["entity_id"], width=44))
-    row(4, "메모(선택)", ttk.Entry(frm, textvariable=vars_["note"], width=44))
-
-    hint = ttk.Label(frm, text="TIP: 연결대상+ID를 넣으면 '관련 열기'로 바로 이동합니다.", foreground="#666")
-    hint.grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=6)
-
-    def save():
-        title = vars_["title"].get().strip()
-        if not title:
-            messagebox.showwarning("확인", "제목은 필수입니다.")
-            return
-
-        due_at = vars_["due_at"].get().strip() or None
-        if due_at:
-            try:
-                datetime.strptime(due_at, "%Y-%m-%d %H:%M")
-            except Exception:
-                messagebox.showwarning("확인", "기한 형식이 올바르지 않습니다. 예: 2026-02-13 14:30")
-                return
-
-        et = vars_["entity_type"].get().strip() or None
-        eid_txt = vars_["entity_id"].get().strip()
-        eid = int(eid_txt) if eid_txt.isdigit() else None
-        note = vars_["note"].get().strip()
-
+    def refresh_tasks(self):
+        # 자동 태스크 최신화
         try:
-            add_task(title=title, due_at=due_at, entity_type=et, entity_id=eid, note=note, kind="MANUAL", status="OPEN")
-        except Exception as exc:
-            messagebox.showerror("오류", f"저장 실패: {exc}")
-            return
+            reconcile_auto_tasks()
+        except Exception:
+            pass
+    
+        rows = list_tasks(include_done=False, limit=400)
+        self.dash_vars.get("tasks_open", tk.StringVar()).set(str(len(rows)))
+    
+        for i in self.tasks_tree.get_children():
+            self.tasks_tree.delete(i)
+    
+        for r in rows:
+            entity = ""
+            et = str(r.get("entity_type") or "").strip()
+            eid = r.get("entity_id")
+            if et and eid is not None:
+                entity = f"{et}#{eid}"
+    
+            self.tasks_tree.insert(
+                "",
+                "end",
+                values=(
+                    r.get("id"),
+                    r.get("due_at") or "",
+                    r.get("title") or "",
+                    entity,
+                    r.get("status") or "",
+                ),
+            )
 
+    def _selected_task_id(self) -> int | None:
+        sel = self.tasks_tree.selection()
+        if not sel:
+            return None
+        try:
+            return int(self.tasks_tree.item(sel[0], "values")[0])
+        except Exception:
+            return None
+
+    def mark_selected_task_done(self):
+        tid = self._selected_task_id()
+        if tid is None:
+            return
+        try:
+            mark_task_done(tid)
+        except Exception as exc:
+            messagebox.showerror("오류", f"완료 처리 실패: {exc}")
+            return
         self.refresh_tasks()
         self.refresh_dashboard()
-        win.destroy()
 
-    btns = ttk.Frame(frm)
-    btns.grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=12)
-    ttk.Button(btns, text="저장", command=save).pack(side="left", padx=4)
-    ttk.Button(btns, text="취소", command=win.destroy).pack(side="left", padx=4)
+    def open_selected_task_related(self):
+        tid = self._selected_task_id()
+        if tid is None:
+            return
+        row = None
+        try:
+            # list_tasks는 필터가 있어 get_task 대신 재조회
+            tasks = list_tasks(include_done=True, limit=500)
+            for t in tasks:
+                if int(t.get("id")) == tid:
+                    row = t
+                    break
+        except Exception:
+            row = None
+    
+        if not row:
+            return
+    
+        et = str(row.get("entity_type") or "").strip()
+        eid = row.get("entity_id")
+    
+        try:
+            if et == "PROPERTY" and eid is not None:
+                self.open_property_detail(int(eid))
+            elif et == "CUSTOMER" and eid is not None:
+                self.open_customer_detail(int(eid))
+            elif et == "VIEWING" and eid is not None:
+                v = get_viewing(int(eid))
+                if v and v.get("property_id"):
+                    self.open_property_detail(int(v.get("property_id")))
+            else:
+                messagebox.showinfo("안내", "연결된 대상이 없는 할 일입니다.")
+        except Exception as exc:
+            messagebox.showerror("오류", f"관련 열기 실패: {exc}")
 
-    # -----------------
-    # Properties
-    # -----------------
+    def _on_double_click_task(self, _event):
+        self.open_selected_task_related()
+
+    def open_add_task_window(self, *, default_entity_type: str = "", default_entity_id: int | None = None):
+        win = tk.Toplevel(self.root)
+        win.title("새 할 일 추가")
+        win.geometry("520x320")
+    
+        vars_ = {
+            "title": tk.StringVar(value=""),
+            "due_at": tk.StringVar(value=""),
+            "entity_type": tk.StringVar(value=default_entity_type),
+            "entity_id": tk.StringVar(value=str(default_entity_id) if default_entity_id is not None else ""),
+            "note": tk.StringVar(value=""),
+        }
+    
+        frm = ttk.Frame(win)
+        frm.pack(fill="both", expand=True, padx=12, pady=12)
+    
+        def row(r, label, widget):
+            ttk.Label(frm, text=label).grid(row=r, column=0, padx=6, pady=6, sticky="e")
+            widget.grid(row=r, column=1, padx=6, pady=6, sticky="w")
+    
+        row(0, "제목(필수)", ttk.Entry(frm, textvariable=vars_["title"], width=44))
+        row(1, "기한(선택, YYYY-MM-DD HH:MM)", ttk.Entry(frm, textvariable=vars_["due_at"], width=44))
+    
+        et_combo = ttk.Combobox(frm, textvariable=vars_["entity_type"], values=["", "PROPERTY", "CUSTOMER", "VIEWING"], width=41, state="readonly")
+        row(2, "연결대상(선택)", et_combo)
+        row(3, "대상 ID(선택)", ttk.Entry(frm, textvariable=vars_["entity_id"], width=44))
+        row(4, "메모(선택)", ttk.Entry(frm, textvariable=vars_["note"], width=44))
+    
+        hint = ttk.Label(frm, text="TIP: 연결대상+ID를 넣으면 '관련 열기'로 바로 이동합니다.", foreground="#666")
+        hint.grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=6)
+    
+        def save():
+            title = vars_["title"].get().strip()
+            if not title:
+                messagebox.showwarning("확인", "제목은 필수입니다.")
+                return
+    
+            due_at = vars_["due_at"].get().strip() or None
+            if due_at:
+                try:
+                    datetime.strptime(due_at, "%Y-%m-%d %H:%M")
+                except Exception:
+                    messagebox.showwarning("확인", "기한 형식이 올바르지 않습니다. 예: 2026-02-13 14:30")
+                    return
+    
+            et = vars_["entity_type"].get().strip() or None
+            eid_txt = vars_["entity_id"].get().strip()
+            eid = int(eid_txt) if eid_txt.isdigit() else None
+            note = vars_["note"].get().strip()
+    
+            try:
+                add_task(title=title, due_at=due_at, entity_type=et, entity_id=eid, note=note, kind="MANUAL", status="OPEN")
+            except Exception as exc:
+                messagebox.showerror("오류", f"저장 실패: {exc}")
+                return
+    
+            self.refresh_tasks()
+            self.refresh_dashboard()
+            win.destroy()
+    
+        btns = ttk.Frame(frm)
+        btns.grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=12)
+        ttk.Button(btns, text="저장", command=save).pack(side="left", padx=4)
+        ttk.Button(btns, text="취소", command=win.destroy).pack(side="left", padx=4)
+    
+        # -----------------
+        # Properties
+        # -----------------
     def _build_property_ui(self):
         top = ttk.LabelFrame(self.property_tab, text="물건 등록(빠른 입력)")
         top.pack(fill="x", padx=10, pady=8)
@@ -573,7 +573,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
             ttk.Button(btns, text="상세", command=lambda t=tab_name: self.open_selected_property_detail(t)).pack(side="left", padx=4)
             ttk.Button(btns, text="숨김/보임", command=lambda t=tab_name: self.toggle_selected_property(t)).pack(side="left", padx=4)
             ttk.Button(btns, text="삭제", command=lambda t=tab_name: self.delete_selected_property(t)).pack(side="left", padx=4)
-
+    
     def _on_property_tab_changed(self):
         tab = str(self.pvars["tab"].get())
         # 단지명 자동
@@ -590,14 +590,14 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         if isinstance(unit_combo, ttk.Combobox):
             values = UNIT_TYPES_BY_TAB.get(tab, [])
             unit_combo.configure(values=values)
-
+    
     def _on_unit_type_changed(self):
         ut = str(self.pvars["unit_type"].get())
         area = _parse_area_from_unit_type(ut)
         if area is not None:
             self.pvars["area"].set(str(area))
             self.pvars["pyeong"].set(str(_m2_to_pyeong(area)))
-
+    
     def create_property(self):
         data = {}
         for k, v in self.pvars.items():
@@ -607,7 +607,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
                 data[k] = str(v.get()).strip()
         add_property(data)
         self.refresh_all()
-
+    
     def refresh_properties(self):
         for tab in PROPERTY_TABS:
             tree = self.prop_trees[tab]
@@ -629,7 +629,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
                         row.get("updated_at"),
                     ),
                 )
-
+    
     def _selected_id_from_tree(self, tree: ttk.Treeview) -> int | None:
         selected = tree.selection()
         if not selected:
@@ -638,7 +638,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
             return int(tree.item(selected[0], "values")[0])
         except Exception:
             return None
-
+    
     def toggle_selected_property(self, tab_name: str):
         tree = self.prop_trees[tab_name]
         pid = self._selected_id_from_tree(tree)
@@ -646,7 +646,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
             return
         toggle_property_hidden(pid)
         self.refresh_all()
-
+    
     def delete_selected_property(self, tab_name: str):
         tree = self.prop_trees[tab_name]
         pid = self._selected_id_from_tree(tree)
@@ -655,20 +655,20 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         if messagebox.askyesno("확인", "해당 물건을 삭제 처리(복구 가능)할까요?"):
             soft_delete_property(pid)
             self.refresh_all()
-
+    
     def open_selected_property_detail(self, tab_name: str):
         tree = self.prop_trees[tab_name]
         pid = self._selected_id_from_tree(tree)
         if pid is None:
             return
         self.open_property_detail(pid)
-
+    
     def _on_double_click_property(self, _event, tab_name: str):
         self.open_selected_property_detail(tab_name)
-
-    # -----------------
-    # Customers
-    # -----------------
+    
+        # -----------------
+        # Customers
+        # -----------------
     def _build_customer_ui(self):
         top = ttk.LabelFrame(self.customer_tab, text="고객 요구사항 등록")
         top.pack(fill="x", padx=10, pady=8)
@@ -750,14 +750,14 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         ttk.Button(btns, text="상세", command=self.open_selected_customer_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="숨김/보임", command=self.toggle_selected_customer).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=self.delete_selected_customer).pack(side="left", padx=4)
-
+    
     def create_customer(self):
         if not self.cvars["customer_name"].get().strip():
             messagebox.showwarning("확인", "고객명은 필수입니다.")
             return
         add_customer({k: v.get() for k, v in self.cvars.items()})
         self.refresh_all()
-
+    
     def refresh_customers(self):
         for i in self.customer_tree.get_children():
             self.customer_tree.delete(i)
@@ -778,14 +778,14 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
                     row.get("updated_at"),
                 ),
             )
-
+    
     def toggle_selected_customer(self):
         cid = self._selected_id_from_tree(self.customer_tree)
         if cid is None:
             return
         toggle_customer_hidden(cid)
         self.refresh_all()
-
+    
     def delete_selected_customer(self):
         cid = self._selected_id_from_tree(self.customer_tree)
         if cid is None:
@@ -793,19 +793,19 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         if messagebox.askyesno("확인", "해당 고객 요청을 삭제 처리(복구 가능)할까요?"):
             soft_delete_customer(cid)
             self.refresh_all()
-
+    
     def open_selected_customer_detail(self):
         cid = self._selected_id_from_tree(self.customer_tree)
         if cid is None:
             return
         self.open_customer_detail(cid)
-
+    
     def _on_double_click_customer(self, _event):
         self.open_selected_customer_detail()
-
-    # -----------------
-    # Matching
-    # -----------------
+    
+        # -----------------
+        # Matching
+        # -----------------
     def _build_matching_ui(self):
         top = ttk.LabelFrame(self.matching_tab, text="고객 → 물건 매칭(규칙 기반)")
         top.pack(fill="x", padx=10, pady=10)
@@ -843,7 +843,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         self.match_tree.bind("<Double-1>", self._on_double_click_match)
 
         self.refresh_matching_customers()
-
+    
     def refresh_matching_customers(self):
         rows = [r for r in list_customers() if not r.get("hidden") and not r.get("deleted")]
         values = [f"{r['id']} | {r.get('customer_name','')} | {r.get('phone','')}" for r in rows]
@@ -851,7 +851,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         self.match_customer_combo.configure(values=values)
         if values and not self.match_customer_var.get():
             self.match_customer_var.set(values[0])
-
+    
     def run_matching(self):
         key = self.match_customer_var.get()
         if not key:
@@ -886,7 +886,7 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
                     ", ".join(r.reasons),
                 ),
             )
-
+    
     def _on_double_click_match(self, _event):
         selected = self.match_tree.selection()
         if not selected:
@@ -898,111 +898,111 @@ def open_add_task_window(self, *, default_entity_type: str = "", default_entity_
         self.open_property_detail(pid)
 
 
-def _get_current_matching_customer(self) -> dict | None:
-    key = self.match_customer_var.get()
-    if not key:
-        return None
-    cid = getattr(self, "_match_customer_index", {}).get(key)
-    if not cid:
-        return None
-    return get_customer(int(cid))
+    def _get_current_matching_customer(self) -> dict | None:
+        key = self.match_customer_var.get()
+        if not key:
+            return None
+        cid = getattr(self, "_match_customer_index", {}).get(key)
+        if not cid:
+            return None
+        return get_customer(int(cid))
 
-def _get_selected_match_property_ids(self, *, fallback_top_n: int = 5) -> list[int]:
-    ids: list[int] = []
-    for item in self.match_tree.selection():
-        try:
-            pid = int(self.match_tree.item(item, "values")[1])
-            ids.append(pid)
-        except Exception:
-            continue
-    if ids:
+    def _get_selected_match_property_ids(self, *, fallback_top_n: int = 5) -> list[int]:
+        ids: list[int] = []
+        for item in self.match_tree.selection():
+            try:
+                pid = int(self.match_tree.item(item, "values")[1])
+                ids.append(pid)
+            except Exception:
+                continue
+        if ids:
+            return ids
+    
+        # fallback: first N rows in the tree
+        for item in self.match_tree.get_children()[:fallback_top_n]:
+            try:
+                pid = int(self.match_tree.item(item, "values")[1])
+                ids.append(pid)
+            except Exception:
+                continue
         return ids
 
-    # fallback: first N rows in the tree
-    for item in self.match_tree.get_children()[:fallback_top_n]:
-        try:
-            pid = int(self.match_tree.item(item, "values")[1])
-            ids.append(pid)
-        except Exception:
-            continue
-    return ids
-
-def open_proposals_folder(self):
-    self.settings = self._load_settings()
-    out_dir = self.settings.sync_dir / "exports" / "proposals"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    _open_folder(out_dir)
-
-def generate_proposal_from_matching(self):
-    customer = self._get_current_matching_customer()
-    if not customer:
-        messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
-        return
-
-    pids = self._get_selected_match_property_ids(fallback_top_n=5)
-    if not pids:
-        messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
-        return
-
-    props: list[dict] = []
-    photos_by_property: dict[int, list[str]] = {}
-
-    for pid in pids:
-        row = get_property(pid)
-        if not row:
-            continue
-        props.append(row)
-        photos_by_property[pid] = [r.get("file_path") for r in list_photos(pid) if r.get("file_path")]
-
-    self.settings = self._load_settings()
-    out_dir = self.settings.sync_dir / "exports" / "proposals"
-
-    try:
-        out = generate_proposal_pdf(
-            customer=customer,
-            properties=props,
-            photos_by_property=photos_by_property,
-            output_dir=out_dir,
-            title="매물 제안서",
-        )
-    except Exception as exc:
-        messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
-        return
-
-    messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
-    try:
+    def open_proposals_folder(self):
+        self.settings = self._load_settings()
+        out_dir = self.settings.sync_dir / "exports" / "proposals"
+        out_dir.mkdir(parents=True, exist_ok=True)
         _open_folder(out_dir)
-    except Exception:
-        pass
 
-def copy_message_from_matching(self):
-    customer = self._get_current_matching_customer()
-    if not customer:
-        messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
-        return
-
-    pids = self._get_selected_match_property_ids(fallback_top_n=5)
-    if not pids:
-        messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
-        return
-
-    props: list[dict] = []
-    for pid in pids:
-        row = get_property(pid)
-        if row:
+    def generate_proposal_from_matching(self):
+        customer = self._get_current_matching_customer()
+        if not customer:
+            messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
+            return
+    
+        pids = self._get_selected_match_property_ids(fallback_top_n=5)
+        if not pids:
+            messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
+            return
+    
+        props: list[dict] = []
+        photos_by_property: dict[int, list[str]] = {}
+    
+        for pid in pids:
+            row = get_property(pid)
+            if not row:
+                continue
             props.append(row)
+            photos_by_property[pid] = [r.get("file_path") for r in list_photos(pid) if r.get("file_path")]
+    
+        self.settings = self._load_settings()
+        out_dir = self.settings.sync_dir / "exports" / "proposals"
+    
+        try:
+            out = generate_proposal_pdf(
+                customer=customer,
+                properties=props,
+                photos_by_property=photos_by_property,
+                output_dir=out_dir,
+                title="매물 제안서",
+            )
+        except Exception as exc:
+            messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
+            return
+    
+        messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
+        try:
+            _open_folder(out_dir)
+        except Exception:
+            pass
 
-    msg = build_kakao_message(customer, props, include_links=True)
-    try:
-        self.root.clipboard_clear()
-        self.root.clipboard_append(msg)
-        messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
-    except Exception as exc:
-        messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
-
-    # -----------------
-    # Settings tab
-    # -----------------
+    def copy_message_from_matching(self):
+        customer = self._get_current_matching_customer()
+        if not customer:
+            messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
+            return
+    
+        pids = self._get_selected_match_property_ids(fallback_top_n=5)
+        if not pids:
+            messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
+            return
+    
+        props: list[dict] = []
+        for pid in pids:
+            row = get_property(pid)
+            if row:
+                props.append(row)
+    
+        msg = build_kakao_message(customer, props, include_links=True)
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(msg)
+            messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
+        except Exception as exc:
+            messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
+    
+        # -----------------
+        # Settings tab
+        # -----------------
     def _build_settings_ui(self):
         box = ttk.LabelFrame(self.settings_tab, text="동기화 설정(관리자)")
         box.pack(fill="x", padx=10, pady=10)
@@ -1031,22 +1031,22 @@ def copy_message_from_matching(self):
             ),
         )
         hint.pack(anchor="w", padx=14)
-
+    
     def browse_sync_dir(self):
         d = filedialog.askdirectory(title="동기화 폴더 선택")
         if d:
             self.set_sync_dir_var.set(d)
-
+    
     def save_settings(self):
         sync_dir = Path(self.set_sync_dir_var.get()).expanduser()
         webhook = self.set_webhook_var.get().strip()
         self.settings = AppSettings(sync_dir=sync_dir, webhook_url=webhook)
         self._persist_settings()
         messagebox.showinfo("완료", "설정이 저장되었습니다.")
-
-    # -----------------
-    # Sync / Export
-    # -----------------
+    
+        # -----------------
+        # Sync / Export
+        # -----------------
     def export_sync(self):
         self.settings = self._load_settings()  # 최신 반영
         props = list_properties(include_deleted=False)
@@ -1066,14 +1066,14 @@ def copy_message_from_matching(self):
             messagebox.showinfo("동기화", msg)
         else:
             messagebox.showerror("동기화 실패", msg)
-
+    
     def open_export_folder(self):
         self.settings = self._load_settings()
         _open_folder(self.settings.sync_dir / "exports")
-
-    # -----------------
-    # Detail windows
-    # -----------------
+    
+        # -----------------
+        # Detail windows
+        # -----------------
     def open_property_detail(self, property_id: int):
         row = get_property(property_id)
         if not row:
@@ -1304,7 +1304,7 @@ def copy_message_from_matching(self):
         ttk.Button(vw_controls, text="내보내기/동기화", command=self.export_sync).pack(side="right", padx=4)
 
         refresh_viewings()
-
+    
     def _copy_photo_to_library(self, src: Path, property_id: int) -> Path:
         self.settings = self._load_settings()
         base = self.settings.sync_dir
@@ -1316,7 +1316,7 @@ def copy_message_from_matching(self):
         dst = dst_dir / f"{property_id}_{ts}_{safe_name}"
         shutil.copy2(src, dst)
         return dst
-
+    
     def _open_add_viewing_window(self, property_id: int, on_saved):
         win = tk.Toplevel(self.root)
         win.title("일정 추가")
@@ -1373,7 +1373,7 @@ def copy_message_from_matching(self):
 
         ttk.Button(frm, text="저장", command=save).grid(row=5, column=0, padx=6, pady=12)
         ttk.Button(frm, text="취소", command=win.destroy).grid(row=5, column=1, padx=6, pady=12, sticky="w")
-
+    
     def open_customer_detail(self, customer_id: int):
         row = get_customer(customer_id)
         if not row:
@@ -1439,7 +1439,7 @@ def copy_message_from_matching(self):
         ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
         ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
         ttk.Button(actions, text="매칭 보기", command=lambda: self._open_matching_for_customer(customer_id)).pack(side="left", padx=4)
-
+    
     def _open_matching_for_customer(self, customer_id: int):
         # 매칭 탭으로 전환하고 고객 선택
         self.main.select(self.matching_tab)
@@ -1452,77 +1452,77 @@ def copy_message_from_matching(self):
         self.run_matching()
 
 
-def _top_matches_for_customer(self, customer_id: int, top_n: int = 5) -> tuple[dict | None, list[dict]]:
-    customer = get_customer(customer_id)
-    if not customer:
-        return None, []
-    props = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
-    results = match_properties(customer, props, limit=max(1, int(top_n)))
-    matched = [r.property_row for r in results]
-    return customer, matched
+    def _top_matches_for_customer(self, customer_id: int, top_n: int = 5) -> tuple[dict | None, list[dict]]:
+        customer = get_customer(customer_id)
+        if not customer:
+            return None, []
+        props = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
+        results = match_properties(customer, props, limit=max(1, int(top_n)))
+        matched = [r.property_row for r in results]
+        return customer, matched
 
-def generate_proposal_for_customer(self, customer_id: int, top_n: int = 5):
-    customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
-    if not customer:
-        messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
-        return
-    if not props:
-        messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
-        return
-
-    photos_by_property: dict[int, list[str]] = {}
-    for p in props:
+    def generate_proposal_for_customer(self, customer_id: int, top_n: int = 5):
+        customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
+        if not customer:
+            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
+            return
+        if not props:
+            messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
+            return
+    
+        photos_by_property: dict[int, list[str]] = {}
+        for p in props:
+            try:
+                pid = int(p.get("id"))
+            except Exception:
+                continue
+            photos_by_property[pid] = [r.get("file_path") for r in list_photos(pid) if r.get("file_path")]
+    
+        self.settings = self._load_settings()
+        out_dir = self.settings.sync_dir / "exports" / "proposals"
+    
         try:
-            pid = int(p.get("id"))
+            out = generate_proposal_pdf(
+                customer=customer,
+                properties=props,
+                photos_by_property=photos_by_property,
+                output_dir=out_dir,
+                title="매물 제안서",
+            )
+        except Exception as exc:
+            messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
+            return
+    
+        messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
+        try:
+            _open_folder(out_dir)
         except Exception:
-            continue
-        photos_by_property[pid] = [r.get("file_path") for r in list_photos(pid) if r.get("file_path")]
+            pass
 
-    self.settings = self._load_settings()
-    out_dir = self.settings.sync_dir / "exports" / "proposals"
-
-    try:
-        out = generate_proposal_pdf(
-            customer=customer,
-            properties=props,
-            photos_by_property=photos_by_property,
-            output_dir=out_dir,
-            title="매물 제안서",
-        )
-    except Exception as exc:
-        messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
-        return
-
-    messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
-    try:
-        _open_folder(out_dir)
-    except Exception:
-        pass
-
-def copy_message_for_customer(self, customer_id: int, top_n: int = 5):
-    customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
-    if not customer:
-        messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
-        return
-    if not props:
-        messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
-        return
-
-    msg = build_kakao_message(customer, props, include_links=True)
-    try:
-        self.root.clipboard_clear()
-        self.root.clipboard_append(msg)
-        messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
-    except Exception as exc:
-        messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
-
+    def copy_message_for_customer(self, customer_id: int, top_n: int = 5):
+        customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
+        if not customer:
+            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
+            return
+        if not props:
+            messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
+            return
+    
+        msg = build_kakao_message(customer, props, include_links=True)
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(msg)
+            messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
+        except Exception as exc:
+            messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
+    
     def _on_double_click_viewing(self, _event):
         # 현재는 별도 상세창은 생략(필요하면 확장)
         pass
-
-    # -----------------
-    # Refresh
-    # -----------------
+    
+        # -----------------
+        # Refresh
+        # -----------------
     def refresh_all(self):
         # 자동 '할 일' 갱신(조용히)
         try:
