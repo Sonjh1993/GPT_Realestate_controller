@@ -67,13 +67,35 @@ def init_db() -> None:
             unit_type TEXT,
             area REAL,
             pyeong REAL,
+            dong TEXT,
+            ho TEXT,
             address_detail TEXT,
             floor TEXT,
             total_floor TEXT,
             view TEXT,
             orientation TEXT,
             condition TEXT,
+            deal_sale INTEGER DEFAULT 0,
+            deal_jeonse INTEGER DEFAULT 0,
+            deal_wolse INTEGER DEFAULT 0,
+            price_sale_eok INTEGER,
+            price_sale_che INTEGER,
+            price_jeonse_eok INTEGER,
+            price_jeonse_che INTEGER,
+            wolse_deposit_eok INTEGER,
+            wolse_deposit_che INTEGER,
+            wolse_rent_man INTEGER,
             repair_needed INTEGER DEFAULT 0,
+            repair_items TEXT,
+            owner_name TEXT,
+            owner_phone TEXT,
+            owner_status TEXT,
+            resident_type TEXT,
+            tenant_phone TEXT,
+            visit_coop TEXT,
+            contact_coop TEXT,
+            visit_condition TEXT,
+            move_available_date TEXT,
             tenant_info TEXT,
             naver_link TEXT,
             special_notes TEXT,
@@ -92,11 +114,16 @@ def init_db() -> None:
             preferred_tab TEXT,
             preferred_area TEXT,
             preferred_pyeong TEXT,
+            deal_type TEXT,
+            size_unit TEXT,
+            size_value TEXT,
             budget TEXT,
             move_in_period TEXT,
             view_preference TEXT,
+            condition_preference TEXT,
             location_preference TEXT,
             floor_preference TEXT,
+            has_pet TEXT,
             extra_needs TEXT,
             status TEXT DEFAULT '진행',
             hidden INTEGER DEFAULT 0,
@@ -168,10 +195,32 @@ CREATE TABLE IF NOT EXISTS audit_log (
         conn,
         "properties",
         {
+            "dong": "TEXT",
+            "ho": "TEXT",
             "address_detail": "TEXT",
             "total_floor": "TEXT",
             "view": "TEXT",
             "orientation": "TEXT",
+            "deal_sale": "INTEGER DEFAULT 0",
+            "deal_jeonse": "INTEGER DEFAULT 0",
+            "deal_wolse": "INTEGER DEFAULT 0",
+            "price_sale_eok": "INTEGER",
+            "price_sale_che": "INTEGER",
+            "price_jeonse_eok": "INTEGER",
+            "price_jeonse_che": "INTEGER",
+            "wolse_deposit_eok": "INTEGER",
+            "wolse_deposit_che": "INTEGER",
+            "wolse_rent_man": "INTEGER",
+            "repair_items": "TEXT",
+            "owner_name": "TEXT",
+            "owner_phone": "TEXT",
+            "owner_status": "TEXT",
+            "resident_type": "TEXT",
+            "tenant_phone": "TEXT",
+            "visit_coop": "TEXT",
+            "contact_coop": "TEXT",
+            "visit_condition": "TEXT",
+            "move_available_date": "TEXT",
             "status": "TEXT DEFAULT '신규등록'",
             "deleted": "INTEGER DEFAULT 0",
             "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
@@ -181,6 +230,11 @@ CREATE TABLE IF NOT EXISTS audit_log (
         conn,
         "customer_requests",
         {
+            "deal_type": "TEXT",
+            "size_unit": "TEXT",
+            "size_value": "TEXT",
+            "condition_preference": "TEXT",
+            "has_pet": "TEXT",
             "status": "TEXT DEFAULT '진행'",
             "deleted": "INTEGER DEFAULT 0",
             "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
@@ -248,37 +302,56 @@ def add_property(data: dict[str, Any]) -> int:
     tab = data.get("tab", "")
     complex_name = data.get("complex_name") or TAB_COMPLEX_NAME.get(tab, "")
 
-    cur.execute(
-        """
-        INSERT INTO properties
-        (tab, complex_name, unit_type, area, pyeong, address_detail, floor, total_floor,
-         view, orientation, condition, repair_needed, tenant_info, naver_link,
-         special_notes, note, status, hidden, deleted, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-        """,
-        (
-            tab,
-            complex_name,
-            data.get("unit_type", ""),
-            _to_float_or_none(data.get("area")),
-            _to_float_or_none(data.get("pyeong")),
-            data.get("address_detail", ""),
-            data.get("floor", ""),
-            data.get("total_floor", ""),
-            data.get("view", ""),
-            data.get("orientation", ""),
-            data.get("condition", ""),
-            1 if data.get("repair_needed") else 0,
-            data.get("tenant_info", ""),
-            data.get("naver_link", ""),
-            data.get("special_notes", ""),
-            data.get("note", ""),
-            data.get("status", "신규등록"),
-            1 if data.get("hidden") else 0,
-            _now_ts(),
-            _now_ts(),
-        ),
-    )
+    values = {
+        "tab": tab,
+        "complex_name": complex_name,
+        "unit_type": data.get("unit_type", ""),
+        "area": _to_float_or_none(data.get("area")),
+        "pyeong": _to_float_or_none(data.get("pyeong")),
+        "dong": data.get("dong", ""),
+        "ho": data.get("ho", ""),
+        "address_detail": data.get("address_detail", ""),
+        "floor": data.get("floor", ""),
+        "total_floor": data.get("total_floor", ""),
+        "view": data.get("view", ""),
+        "orientation": data.get("orientation", ""),
+        "condition": data.get("condition", ""),
+        "deal_sale": 1 if data.get("deal_sale") else 0,
+        "deal_jeonse": 1 if data.get("deal_jeonse") else 0,
+        "deal_wolse": 1 if data.get("deal_wolse") else 0,
+        "price_sale_eok": _to_int_or_none(data.get("price_sale_eok")),
+        "price_sale_che": _to_int_or_none(data.get("price_sale_che")),
+        "price_jeonse_eok": _to_int_or_none(data.get("price_jeonse_eok")),
+        "price_jeonse_che": _to_int_or_none(data.get("price_jeonse_che")),
+        "wolse_deposit_eok": _to_int_or_none(data.get("wolse_deposit_eok")),
+        "wolse_deposit_che": _to_int_or_none(data.get("wolse_deposit_che")),
+        "wolse_rent_man": _to_int_or_none(data.get("wolse_rent_man")),
+        "repair_needed": 1 if data.get("repair_needed") else 0,
+        "repair_items": data.get("repair_items", ""),
+        "owner_name": data.get("owner_name", ""),
+        "owner_phone": data.get("owner_phone", ""),
+        "owner_status": data.get("owner_status", ""),
+        "resident_type": data.get("resident_type", ""),
+        "tenant_phone": data.get("tenant_phone", ""),
+        "visit_coop": data.get("visit_coop", ""),
+        "contact_coop": data.get("contact_coop", ""),
+        "visit_condition": data.get("visit_condition", ""),
+        "move_available_date": data.get("move_available_date", ""),
+        "tenant_info": data.get("tenant_info", ""),
+        "naver_link": data.get("naver_link", ""),
+        "special_notes": data.get("special_notes", ""),
+        "note": data.get("note", ""),
+        "status": data.get("status", "신규등록"),
+        "hidden": 1 if data.get("hidden") else 0,
+        "deleted": 0,
+        "created_at": _now_ts(),
+        "updated_at": _now_ts(),
+    }
+    columns = list(values.keys())
+    placeholders = ", ".join(["?"] * len(columns))
+    sql = f"INSERT INTO properties ({', '.join(columns)}) VALUES ({placeholders})"
+    cur.execute(sql, [values[c] for c in columns])
+
     pid = int(cur.lastrowid)
     after = get_property(pid, include_deleted=True)
     _audit(conn, "PROPERTY", pid, "CREATE", None, after)
@@ -419,32 +492,32 @@ def restore_property(property_id: int) -> None:
 def add_customer(data: dict[str, Any]) -> int:
     conn = connect()
     cur = conn.cursor()
-    cur.execute(
-        """
-        INSERT INTO customer_requests
-        (customer_name, phone, preferred_tab, preferred_area, preferred_pyeong,
-         budget, move_in_period, view_preference, location_preference,
-         floor_preference, extra_needs, status, hidden, deleted, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
-        """,
-        (
-            data.get("customer_name", ""),
-            data.get("phone", ""),
-            data.get("preferred_tab", ""),
-            data.get("preferred_area", ""),
-            data.get("preferred_pyeong", ""),
-            data.get("budget", ""),
-            data.get("move_in_period", ""),
-            data.get("view_preference", ""),
-            data.get("location_preference", ""),
-            data.get("floor_preference", ""),
-            data.get("extra_needs", ""),
-            data.get("status", "진행"),
-            1 if data.get("hidden") else 0,
-            _now_ts(),
-            _now_ts(),
-        ),
-    )
+    values = {
+        "customer_name": data.get("customer_name", ""),
+        "phone": data.get("phone", ""),
+        "preferred_tab": data.get("preferred_tab", ""),
+        "preferred_area": data.get("preferred_area", ""),
+        "preferred_pyeong": data.get("preferred_pyeong", ""),
+        "deal_type": data.get("deal_type", ""),
+        "size_unit": data.get("size_unit", ""),
+        "size_value": data.get("size_value", ""),
+        "budget": data.get("budget", ""),
+        "move_in_period": data.get("move_in_period", ""),
+        "view_preference": data.get("view_preference", ""),
+        "condition_preference": data.get("condition_preference", ""),
+        "location_preference": data.get("location_preference", ""),
+        "floor_preference": data.get("floor_preference", ""),
+        "has_pet": data.get("has_pet", ""),
+        "extra_needs": data.get("extra_needs", ""),
+        "status": data.get("status", "진행"),
+        "hidden": 1 if data.get("hidden") else 0,
+        "deleted": 0,
+        "created_at": _now_ts(),
+        "updated_at": _now_ts(),
+    }
+    cols = list(values.keys())
+    sql = f"INSERT INTO customer_requests ({', '.join(cols)}) VALUES ({', '.join(['?']*len(cols))})"
+    cur.execute(sql, [values[c] for c in cols])
     cid = int(cur.lastrowid)
     after = get_customer(cid, include_deleted=True)
     _audit(conn, "CUSTOMER", cid, "CREATE", None, after)
@@ -468,11 +541,16 @@ def update_customer(customer_id: int, data: dict[str, Any]) -> None:
             preferred_tab=?,
             preferred_area=?,
             preferred_pyeong=?,
+            deal_type=?,
+            size_unit=?,
+            size_value=?,
             budget=?,
             move_in_period=?,
             view_preference=?,
+            condition_preference=?,
             location_preference=?,
             floor_preference=?,
+            has_pet=?,
             extra_needs=?,
             status=?,
             updated_at=?
@@ -484,11 +562,16 @@ def update_customer(customer_id: int, data: dict[str, Any]) -> None:
             data.get("preferred_tab", before.get("preferred_tab", "")),
             data.get("preferred_area", before.get("preferred_area", "")),
             data.get("preferred_pyeong", before.get("preferred_pyeong", "")),
+            data.get("deal_type", before.get("deal_type", "")),
+            data.get("size_unit", before.get("size_unit", "")),
+            data.get("size_value", before.get("size_value", "")),
             data.get("budget", before.get("budget", "")),
             data.get("move_in_period", before.get("move_in_period", "")),
             data.get("view_preference", before.get("view_preference", "")),
+            data.get("condition_preference", before.get("condition_preference", "")),
             data.get("location_preference", before.get("location_preference", "")),
             data.get("floor_preference", before.get("floor_preference", "")),
+            data.get("has_pet", before.get("has_pet", "")),
             data.get("extra_needs", before.get("extra_needs", "")),
             data.get("status", before.get("status", "진행")),
             _now_ts(),
@@ -512,14 +595,21 @@ def get_customer(customer_id: int, include_deleted: bool = False) -> dict[str, A
     return dict(row) if row else None
 
 
-def list_customers(*, include_deleted: bool = False) -> list[dict[str, Any]]:
+def list_customers(*, include_deleted: bool = False, phone_query: str | None = None) -> list[dict[str, Any]]:
     conn = connect()
-    if include_deleted:
-        rows = conn.execute("SELECT * FROM customer_requests ORDER BY hidden ASC, updated_at DESC").fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM customer_requests WHERE deleted=0 ORDER BY hidden ASC, updated_at DESC"
-        ).fetchall()
+    where = []
+    params: list[Any] = []
+    if not include_deleted:
+        where.append("deleted=0")
+    q = "".join(ch for ch in (phone_query or "") if ch.isdigit())
+    if q:
+        where.append("REPLACE(REPLACE(REPLACE(IFNULL(phone,''), '-', ''), ' ', ''), '.', '') LIKE ?")
+        params.append(f"%{q}%")
+    sql = "SELECT * FROM customer_requests"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY hidden ASC, updated_at DESC"
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -865,5 +955,14 @@ def _to_float_or_none(v: Any) -> float | None:
         return None
     try:
         return float(s)
+    except Exception:
+        return None
+
+
+def _to_int_or_none(v: Any) -> int | None:
+    try:
+        if v is None or str(v).strip() == "":
+            return None
+        return int(float(str(v).strip()))
     except Exception:
         return None

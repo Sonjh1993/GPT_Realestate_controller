@@ -134,7 +134,8 @@ def compute_desired_auto_tasks(
                 note="핵심 항목이 누락되어 있습니다.",
             )
 
-        if photo_count.get(pid, 0) == 0:
+        status = str(p.get("status") or "")
+        if status != "거래완료" and (photo_count.get(pid, 0) == 0 or status == "사진필요"):
             key = f"AUTO_PROP_PHOTO:{pid}"
             desired[key] = DesiredTask(
                 unique_key=key,
