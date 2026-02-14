@@ -958,7 +958,7 @@ class LedgerDesktopApp:
         ttk.Button(btm, text="저장", command=save).pack(side="left", padx=4)
         ttk.Button(btm, text="취소", command=win.destroy).pack(side="left", padx=4)
 
-    def _selected_id_from_tree(self, tree: ttk.Treeview) -> int | None:
+    def _selected_id_from_tree(self, tree: ttk.Treeview, *, value_index: int = -1) -> int | None:
         selected = tree.selection()
         if not selected:
             return None
@@ -966,7 +966,7 @@ class LedgerDesktopApp:
             values = list(tree.item(selected[0], "values"))
             if not values:
                 return None
-            return int(values[-1])
+            return int(values[value_index])
         except Exception:
             return None
     
@@ -1077,9 +1077,22 @@ class LedgerDesktopApp:
             ("status", 80),
             ("updated_at", 150),
         ]
+        col_labels = {
+            "id": "",
+            "customer_name": "고객명",
+            "phone": "전화번호",
+            "deal_type": "거래유형",
+            "size": "희망크기",
+            "move_in": "입주희망",
+            "floor_preference": "층수선호",
+            "status": "상태",
+            "updated_at": "업데이트",
+        }
         for c, w in col_defs:
-            self.customer_tree.heading(c, text=c)
-            self.customer_tree.column(c, width=w)
+            self.customer_tree.heading(c, text=col_labels.get(c, c))
+            self.customer_tree.column(c, width=w, stretch=(c != "id"))
+            if c == "id":
+                self.customer_tree.column(c, minwidth=0, width=0, stretch=False)
         self.customer_tree.pack(fill="both", expand=True, padx=10, pady=8)
         self.customer_tree.bind("<Double-1>", self._on_double_click_customer)
 
@@ -1092,7 +1105,8 @@ class LedgerDesktopApp:
     def open_customer_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("고객 등록")
-        win.geometry("560x560")
+        win.geometry("700x620")
+
         vars_ = {
             "customer_name": tk.StringVar(),
             "phone": tk.StringVar(),
@@ -1100,45 +1114,75 @@ class LedgerDesktopApp:
             "deal_type": tk.StringVar(value="전월세"),
             "size_unit": tk.StringVar(value="㎡"),
             "size_value": tk.StringVar(),
+            "budget": tk.StringVar(),
             "move_in_period": tk.StringVar(),
+            "location_preference": tk.StringVar(),
             "view_preference": tk.StringVar(value="비중요"),
             "condition_preference": tk.StringVar(value="비중요"),
             "floor_preference": tk.StringVar(value="상관없음"),
             "has_pet": tk.StringVar(value="없음"),
-            "budget": tk.StringVar(),
             "extra_needs": tk.StringVar(),
             "status": tk.StringVar(value="진행"),
         }
-        frm = ttk.Frame(win)
-        frm.pack(fill="both", expand=True, padx=12, pady=12)
-        fields = [
-            ("고객명*", "customer_name", "entry", None),
-            ("전화번호", "phone", "entry", None),
-            ("희망 단지", "preferred_tab", "combo", PROPERTY_TABS),
-            ("거래유형", "deal_type", "combo", ["전월세", "매수"]),
-            ("크기 단위", "size_unit", "combo", ["㎡", "평"]),
-            ("희망 크기", "size_value", "entry", None),
-            ("입주 희망일", "move_in_period", "entry", None),
-            ("뷰 중요도", "view_preference", "combo", ["중요", "비중요"]),
-            ("컨디션 중요도", "condition_preference", "combo", ["중요", "비중요"]),
-            ("층수 선호", "floor_preference", "combo", ["저", "중", "고", "상관없음"]),
-            ("애완동물", "has_pet", "combo", ["있음", "없음"]),
-            ("예산", "budget", "entry", None),
-            ("상태", "status", "combo", ["진행", "대기", "보류", "완료"]),
-            ("기타", "extra_needs", "entry", None),
-        ]
-        for i, (label, key, kind, options) in enumerate(fields):
-            ttk.Label(frm, text=label).grid(row=i, column=0, padx=6, pady=5, sticky="e")
-            if kind == "combo":
-                w = ttk.Combobox(frm, textvariable=vars_[key], values=options, state="readonly", width=28)
-            else:
-                w = ttk.Entry(frm, textvariable=vars_[key], width=30)
-            w.grid(row=i, column=1, padx=6, pady=5, sticky="w")
+
+        nb = ttk.Notebook(win)
+        nb.pack(fill="both", expand=True, padx=10, pady=10)
+        s1 = ttk.Frame(nb)
+        s2 = ttk.Frame(nb)
+        s3 = ttk.Frame(nb)
+        nb.add(s1, text="1단계 기본")
+        nb.add(s2, text="2단계 희망조건")
+        nb.add(s3, text="3단계 메모/상태")
+
+        # 1단계 기본
+        ttk.Label(s1, text="고객명*").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s1, textvariable=vars_["customer_name"], width=32).grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="전화번호*").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s1, textvariable=vars_["phone"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="희망 단지").grid(row=2, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s1, textvariable=vars_["preferred_tab"], values=PROPERTY_TABS, state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="거래유형").grid(row=3, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s1, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="입주 희망일").grid(row=4, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s1, textvariable=vars_["move_in_period"], width=32).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="예산").grid(row=5, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s1, textvariable=vars_["budget"], width=32).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+
+        # 2단계 희망조건
+        ttk.Label(s2, text="희망 크기").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        size_wrap = ttk.Frame(s2)
+        size_wrap.grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        ttk.Entry(size_wrap, textvariable=vars_["size_value"], width=18).pack(side="left")
+        ttk.Combobox(size_wrap, textvariable=vars_["size_unit"], values=["㎡", "평"], state="readonly", width=8).pack(side="left", padx=4)
+
+        ttk.Label(s2, text="선호 위치").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="층수 선호").grid(row=2, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s2, textvariable=vars_["floor_preference"], values=["저", "중", "고", "상관없음"], state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="뷰 중요도").grid(row=3, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s2, textvariable=vars_["view_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="컨디션 중요도").grid(row=4, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s2, textvariable=vars_["condition_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="애완동물").grid(row=5, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s2, textvariable=vars_["has_pet"], values=["있음", "없음"], state="readonly", width=29).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+
+        # 3단계 메모/상태
+        ttk.Label(s3, text="상태").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s3, textvariable=vars_["status"], values=["진행", "대기", "보류", "완료"], state="readonly", width=29).grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="추가 요청사항").grid(row=1, column=0, padx=6, pady=8, sticky="ne")
+        ttk.Entry(s3, textvariable=vars_["extra_needs"], width=48).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="※ 고객명/전화번호를 먼저 입력하면 이후 일정/어레인지 연결이 쉬워집니다.", foreground="#555").grid(row=2, column=0, columnspan=2, padx=6, pady=8, sticky="w")
 
         def save():
             if not vars_["customer_name"].get().strip():
-                messagebox.showwarning("확인", "고객명은 필수입니다.")
+                messagebox.showwarning("입력 확인", "고객명(필수)을 입력해주세요.")
+                nb.select(s1)
                 return
+            if not vars_["phone"].get().strip():
+                messagebox.showwarning("입력 확인", "전화번호(필수)를 입력해주세요.")
+                nb.select(s1)
+                return
+
             payload = {k: v.get().strip() for k, v in vars_.items()}
             if payload["size_unit"] == "㎡":
                 payload["preferred_area"] = payload["size_value"]
@@ -1146,12 +1190,19 @@ class LedgerDesktopApp:
             else:
                 payload["preferred_pyeong"] = payload["size_value"]
                 payload["preferred_area"] = ""
-            add_customer(payload)
+
+            try:
+                add_customer(payload)
+            except Exception as exc:
+                messagebox.showerror("저장 실패", str(exc))
+                return
+
             self.refresh_all()
+            messagebox.showinfo("저장 완료", "고객이 저장되었습니다.")
             win.destroy()
 
-        btns = ttk.Frame(frm)
-        btns.grid(row=len(fields), column=1, sticky="w", pady=10)
+        btns = ttk.Frame(win)
+        btns.pack(fill="x", padx=10, pady=10)
         ttk.Button(btns, text="저장", command=save).pack(side="left", padx=4)
         ttk.Button(btns, text="취소", command=win.destroy).pack(side="left", padx=4)
 
@@ -1192,14 +1243,14 @@ class LedgerDesktopApp:
             )
 
     def toggle_selected_customer(self):
-        cid = self._selected_id_from_tree(self.customer_tree)
+        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
         if cid is None:
             return
         toggle_customer_hidden(cid)
         self.refresh_all()
     
     def delete_selected_customer(self):
-        cid = self._selected_id_from_tree(self.customer_tree)
+        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
         if cid is None:
             return
         if messagebox.askyesno("확인", "해당 고객 요청을 삭제 처리(복구 가능)할까요?"):
@@ -1207,7 +1258,7 @@ class LedgerDesktopApp:
             self.refresh_all()
     
     def open_selected_customer_detail(self):
-        cid = self._selected_id_from_tree(self.customer_tree)
+        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
         if cid is None:
             return
         self.open_customer_detail(cid)
