@@ -120,10 +120,10 @@ def generate_proposal_pdf(
     *,
     customer: dict[str, Any],
     properties: list[dict[str, Any]],
-    photos_by_property: dict[int, list[str]] | None,
+    photos_by_property: dict[int, list[dict[str, str] | str]] | None,
     output_dir: Path,
     title: str = "매물 제안서",
-    max_photos_per_property: int = 1,
+    max_photos_per_property: int = 4,
 ) -> ProposalOutput:
     """Generate proposal PDF + txt message into output_dir."""
     _ensure_reportlab()
@@ -207,7 +207,7 @@ def generate_proposal_pdf(
     photos_by_property = photos_by_property or {}
 
     # helper: scale image to fit box
-    def build_image(path: str, max_w_mm: float = 70, max_h_mm: float = 55):
+    def build_image(path: str, max_w_mm: float = 44, max_h_mm: float = 36):
         try:
             reader = ImageReader(path)
             w, h = reader.getSize()
@@ -255,31 +255,47 @@ def generate_proposal_pdf(
         if p.get("naver_link"):
             info_lines.append(f"링크: {p.get('naver_link')}")
 
-        left = Paragraph("<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines]), style_body)
+        detail_text = "<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines])
+        elements.append(Paragraph(detail_text, style_body))
+        elements.append(Spacer(1, 4))
 
-        # pick photos
-        img_paths = photos_by_property.get(pid, [])[:max_photos_per_property]
-        img_obj = build_image(img_paths[0]) if img_paths else Spacer(1, 1)
+        # 사진 우선순위: 거실 > 안방 > 작은방 > 화장실 > 주방 > 나머지
+        raw_photos = photos_by_property.get(pid, [])
+        normalized: list[dict[str, str]] = []
+        for it in raw_photos:
+            if isinstance(it, dict):
+                fp = str(it.get("file_path") or "").strip()
+                tg = str(it.get("tag") or "").strip()
+            else:
+                fp = str(it or "").strip()
+                tg = ""
+            if fp:
+                normalized.append({"file_path": fp, "tag": tg})
 
-        tbl = Table(
-            [[left, img_obj]],
-            colWidths=[115 * mm, 65 * mm],
-        )
-        tbl.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOX", (0, 0), (-1, -1), 0.4, colors.lightgrey),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.2, colors.lightgrey),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ]
+        priority = {"거실": 0, "안방": 1, "작은방": 2, "화장실": 3, "주방": 4}
+        normalized.sort(key=lambda x: (priority.get(x.get("tag", ""), 99), x.get("tag", "")))
+        chosen = normalized[:max_photos_per_property]
+
+        if chosen:
+            img_cells = [build_image(str(it.get("file_path") or "")) for it in chosen]
+            cap_cells = [Paragraph(str(it.get("tag") or "사진"), style_small) for it in chosen]
+            img_table = Table([img_cells, cap_cells], colWidths=[45 * mm] * len(img_cells))
+            img_table.setStyle(
+                TableStyle(
+                    [
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ]
+                )
             )
-        )
-        elements.append(tbl)
-        elements.append(Spacer(1, 10))
+            elements.append(img_table)
+            elements.append(Spacer(1, 8))
+        else:
+            elements.append(Spacer(1, 6))
 
         # page break every ~3 items for readability
         if idx % 3 == 0 and idx != len(properties):
