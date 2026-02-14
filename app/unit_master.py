@@ -102,4 +102,5 @@ def get_total_floor(complex_tab: str, dong: str) -> int:
 
 
 def has_master(complex_tab: str) -> bool:
-    return complex_tab in CSV_BY_TAB
+    csv_path = CSV_BY_TAB.get(complex_tab)
+    return bool(csv_path and csv_path.exists())

@@ -759,26 +759,32 @@ class LedgerDesktopApp:
             vars_["floor"].set(str(floors[0]) if floors else "")
             on_floor_change()
 
+        def set_manual_mode(hint: str):
+            manual_hint.set(hint)
+            dong_cb.configure(state="normal", values=[])
+            floor_cb.configure(state="normal", values=[])
+            ho_cb.configure(state="normal", values=[])
+            vars_["dong"].set("")
+            vars_["floor"].set("")
+            vars_["ho"].set("")
+            reset_auto_values()
+
         def on_tab_change(_=None):
             tab = vars_["tab"].get().strip()
             is_auto = unit_master.has_master(tab)
             if is_auto:
-                manual_hint.set("아파트는 동→층→호만 선택하면 면적/타입이 자동 입력됩니다.")
                 dongs = unit_master.get_dongs(tab)
+                if not dongs:
+                    set_manual_mode("CSV 데이터가 비어 있어 수동 입력 모드로 전환했습니다.")
+                    return
+                manual_hint.set("아파트는 동→층→호만 선택하면 면적/타입이 자동 입력됩니다.")
                 dong_cb.configure(state="readonly", values=dongs)
                 floor_cb.configure(state="readonly")
                 ho_cb.configure(state="readonly")
-                vars_["dong"].set(dongs[0] if dongs else "")
+                vars_["dong"].set(dongs[0])
                 on_dong_change()
             else:
-                manual_hint.set("상가/단독주택은 동/층/호를 직접 입력하세요.")
-                dong_cb.configure(state="normal", values=[])
-                floor_cb.configure(state="normal", values=[])
-                ho_cb.configure(state="normal", values=[])
-                vars_["dong"].set("")
-                vars_["floor"].set("")
-                vars_["ho"].set("")
-                reset_auto_values()
+                set_manual_mode("상가/단독주택은 동/층/호를 직접 입력하세요.")
 
         tab_cb.bind("<<ComboboxSelected>>", on_tab_change)
         dong_cb.bind("<<ComboboxSelected>>", on_dong_change)
@@ -837,8 +843,14 @@ class LedgerDesktopApp:
             data["complex_name"] = tab
 
             if unit_master.has_master(tab):
+                if not (dong and floor and ho):
+                    messagebox.showwarning("입력 확인", "아파트 물건은 동/층/호를 모두 선택해주세요.")
+                    return
                 floor_num = int(floor or 0)
                 info = unit_master.get_unit_info(tab, dong, floor_num, ho)
+                if not info.get("type"):
+                    messagebox.showwarning("입력 확인", "선택한 동/층/호에 대한 타입 정보를 찾지 못했습니다. 다시 선택해주세요.")
+                    return
                 data["unit_type"] = str(info.get("type") or "")
                 data["area"] = info.get("supply_m2") or 0
                 data["pyeong"] = info.get("pyeong") or 0
