@@ -15,6 +15,7 @@ from .matching import match_properties
 from .proposal import build_kakao_message, generate_proposal_pdf
 from .tasks_engine import reconcile_auto_tasks
 from .sheet_sync import SyncSettings, upload_visible_data
+from . import unit_master
 from .storage import (
     PROPERTY_TABS,
     TAB_COMPLEX_NAME,
@@ -48,69 +49,6 @@ from .storage import (
     mark_task_done,
     get_task,
  )
-
-
-# 단지별 면적타입 (드롭다운)
-UNIT_TYPES_BY_TAB = {
-    "봉담자이 프라이드시티": [
-        "82A㎡",
-        "82C㎡",
-        "82A1㎡",
-        "82C1㎡",
-        "82B㎡",
-        "82D㎡",
-        "98C㎡",
-        "98C1㎡",
-        "98D㎡",
-        "98A㎡",
-        "98C2㎡",
-        "99B㎡",
-        "113B㎡",
-        "114A㎡",
-        "114C㎡",
-        "145㎡",
-    ],
-    "힐스테이트봉담프라이드시티": [
-        "83A㎡",
-        "84C㎡",
-        "84D㎡",
-        "84B-1㎡",
-        "84B㎡",
-        "100A㎡",
-        "100B㎡",
-        "100D㎡",
-        "100C㎡",
-        "101E㎡",
-        "116D㎡",
-        "116B㎡",
-        "116E㎡",
-        "116A㎡",
-        "117C㎡",
-        "117C-1㎡",
-        "150㎡",
-    ],
-}
-
-
-def _parse_area_from_unit_type(text: str) -> float | None:
-    # "84B-1㎡" -> 84
-    s = (text or "").strip()
-    if not s:
-        return None
-    num = ""
-    for ch in s:
-        if ch.isdigit() or ch == ".":
-            num += ch
-        else:
-            break
-    try:
-        return float(num) if num else None
-    except Exception:
-        return None
-
-
-def _m2_to_pyeong(area_m2: float) -> float:
-    return round(area_m2 / 3.305785, 1)
 
 
 def _open_folder(path: Path) -> None:
@@ -699,20 +637,6 @@ class LedgerDesktopApp:
                     ),
                 )
 
-    def _infer_floor_from_ho(self, ho: str) -> str:
-        digits = "".join(ch for ch in str(ho) if ch.isdigit())
-        if len(digits) >= 3:
-            return str(int(digits[:-2]))
-        return ""
-
-    def _get_total_floor(self, tab: str, dong: str) -> str:
-        master = {
-            "힐스테이트봉담프라이드시티": {"201":35,"202":22,"203":34,"204":35,"205":35,"206":35,"207":35,"208":35,"209":34,"210":35,"211":35,"212":35,"213":34,"214":27,"215":35,"216":35,"217":35},
-            "봉담자이 프라이드시티": {"101":35,"102":35,"103":35,"104":25,"105":35,"106":35,"107":35,"108":35,"109":33,"110":34,"111":34},
-        }
-        key = "".join(ch for ch in str(dong) if ch.isdigit())
-        return str(master.get(tab, {}).get(key, ""))
-
     def open_property_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("물건 등록")
@@ -720,9 +644,10 @@ class LedgerDesktopApp:
 
         vars_ = {
             "tab": tk.StringVar(value=PROPERTY_TABS[0]),
-            "unit_type": tk.StringVar(),
-            "dong": tk.StringVar(),
-            "ho": tk.StringVar(),
+            "unit_type": tk.StringVar(value=""),
+            "dong": tk.StringVar(value=""),
+            "floor": tk.StringVar(value=""),
+            "ho": tk.StringVar(value=""),
             "area": tk.StringVar(value=""),
             "pyeong": tk.StringVar(value=""),
             "deal_sale": tk.BooleanVar(value=False),
@@ -765,27 +690,100 @@ class LedgerDesktopApp:
         ttk.Label(s1, text="단지").grid(row=0, column=0, padx=6, pady=6, sticky="e")
         tab_cb = ttk.Combobox(s1, textvariable=vars_["tab"], values=PROPERTY_TABS, state="readonly", width=26)
         tab_cb.grid(row=0, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="면적타입").grid(row=1, column=0, padx=6, pady=6, sticky="e")
-        ut_cb = ttk.Combobox(s1, textvariable=vars_["unit_type"], width=26)
-        ut_cb.grid(row=1, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="동").grid(row=2, column=0, padx=6, pady=6, sticky="e")
-        ttk.Entry(s1, textvariable=vars_["dong"], width=28).grid(row=2, column=1, padx=6, pady=6, sticky="w")
+
+        ttk.Label(s1, text="동").grid(row=1, column=0, padx=6, pady=6, sticky="e")
+        dong_cb = ttk.Combobox(s1, textvariable=vars_["dong"], state="readonly", width=26)
+        dong_cb.grid(row=1, column=1, padx=6, pady=6, sticky="w")
+
+        ttk.Label(s1, text="층").grid(row=2, column=0, padx=6, pady=6, sticky="e")
+        floor_cb = ttk.Combobox(s1, textvariable=vars_["floor"], state="readonly", width=26)
+        floor_cb.grid(row=2, column=1, padx=6, pady=6, sticky="w")
+
         ttk.Label(s1, text="호").grid(row=3, column=0, padx=6, pady=6, sticky="e")
-        ttk.Entry(s1, textvariable=vars_["ho"], width=28).grid(row=3, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="면적(㎡)").grid(row=4, column=0, padx=6, pady=6, sticky="e")
-        ttk.Label(s1, textvariable=vars_["area"]).grid(row=4, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="평형").grid(row=5, column=0, padx=6, pady=6, sticky="e")
-        ttk.Label(s1, textvariable=vars_["pyeong"]).grid(row=5, column=1, padx=6, pady=6, sticky="w")
+        ho_cb = ttk.Combobox(s1, textvariable=vars_["ho"], state="readonly", width=26)
+        ho_cb.grid(row=3, column=1, padx=6, pady=6, sticky="w")
+
+        ttk.Label(s1, text="면적타입").grid(row=4, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(s1, textvariable=vars_["unit_type"]).grid(row=4, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(s1, text="면적(㎡)").grid(row=5, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(s1, textvariable=vars_["area"]).grid(row=5, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(s1, text="평형").grid(row=6, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(s1, textvariable=vars_["pyeong"]).grid(row=6, column=1, padx=6, pady=6, sticky="w")
+
+        manual_hint = tk.StringVar(value="")
+        ttk.Label(s1, textvariable=manual_hint, foreground="#555").grid(row=7, column=0, columnspan=2, padx=6, pady=2, sticky="w")
+
+        def reset_auto_values():
+            vars_["unit_type"].set("")
+            vars_["area"].set("")
+            vars_["pyeong"].set("")
+
+        def refresh_unit_info():
+            tab = vars_["tab"].get().strip()
+            if not unit_master.has_master(tab):
+                reset_auto_values()
+                return
+            dong = vars_["dong"].get().strip()
+            ho = vars_["ho"].get().strip()
+            floor_num = int(vars_["floor"].get() or 0)
+            info = unit_master.get_unit_info(tab, dong, floor_num, ho)
+            vars_["unit_type"].set(str(info.get("type") or ""))
+            area = float(info.get("supply_m2") or 0)
+            pyeong = float(info.get("pyeong") or 0)
+            vars_["area"].set(f"{area:g}" if area else "")
+            vars_["pyeong"].set(f"{pyeong:g}" if pyeong else "")
+
+        def on_floor_change(_=None):
+            tab = vars_["tab"].get().strip()
+            if not unit_master.has_master(tab):
+                return
+            dong = vars_["dong"].get().strip()
+            floor = vars_["floor"].get().strip()
+            floors = unit_master.get_floors(tab, dong)
+            floor_cb.configure(values=[str(f) for f in floors])
+            if not floor and floors:
+                floor = str(floors[0])
+                vars_["floor"].set(floor)
+            hos = unit_master.get_hos(tab, dong, int(floor) if floor else 0)
+            ho_cb.configure(values=hos)
+            vars_["ho"].set(hos[0] if hos else "")
+            refresh_unit_info()
+
+        def on_dong_change(_=None):
+            tab = vars_["tab"].get().strip()
+            if not unit_master.has_master(tab):
+                return
+            dong = vars_["dong"].get().strip()
+            floors = unit_master.get_floors(tab, dong)
+            floor_cb.configure(values=[str(f) for f in floors])
+            vars_["floor"].set(str(floors[0]) if floors else "")
+            on_floor_change()
 
         def on_tab_change(_=None):
-            ut_cb.configure(values=UNIT_TYPES_BY_TAB.get(vars_["tab"].get(), []))
-        def on_unit_change(_=None):
-            area = _parse_area_from_unit_type(vars_["unit_type"].get())
-            if area is not None:
-                vars_["area"].set(str(area))
-                vars_["pyeong"].set(str(_m2_to_pyeong(area)))
+            tab = vars_["tab"].get().strip()
+            is_auto = unit_master.has_master(tab)
+            if is_auto:
+                manual_hint.set("아파트는 동→층→호만 선택하면 면적/타입이 자동 입력됩니다.")
+                dongs = unit_master.get_dongs(tab)
+                dong_cb.configure(state="readonly", values=dongs)
+                floor_cb.configure(state="readonly")
+                ho_cb.configure(state="readonly")
+                vars_["dong"].set(dongs[0] if dongs else "")
+                on_dong_change()
+            else:
+                manual_hint.set("상가/단독주택은 동/층/호를 직접 입력하세요.")
+                dong_cb.configure(state="normal", values=[])
+                floor_cb.configure(state="normal", values=[])
+                ho_cb.configure(state="normal", values=[])
+                vars_["dong"].set("")
+                vars_["floor"].set("")
+                vars_["ho"].set("")
+                reset_auto_values()
+
         tab_cb.bind("<<ComboboxSelected>>", on_tab_change)
-        ut_cb.bind("<<ComboboxSelected>>", on_unit_change)
+        dong_cb.bind("<<ComboboxSelected>>", on_dong_change)
+        floor_cb.bind("<<ComboboxSelected>>", on_floor_change)
+        ho_cb.bind("<<ComboboxSelected>>", lambda _e: refresh_unit_info())
         on_tab_change()
 
         ttk.Checkbutton(s2, text="매도", variable=vars_["deal_sale"]).grid(row=0,column=0,padx=6,pady=6,sticky="w")
@@ -826,18 +824,39 @@ class LedgerDesktopApp:
 
         def save():
             if not vars_["owner_phone"].get().strip():
-                messagebox.showwarning("확인", "집주인 전화번호는 필수입니다.")
+                messagebox.showwarning("입력 확인", "집주인 전화번호(필수)를 입력해주세요. 4단계 연락/방문 탭의 '집주인 전화*' 칸입니다.")
                 return
-            dong = vars_["dong"].get().strip()
-            ho = vars_["ho"].get().strip()
+
             tab = vars_["tab"].get().strip()
+            dong = vars_["dong"].get().strip()
+            floor = vars_["floor"].get().strip()
+            ho = vars_["ho"].get().strip()
+
             data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k,v in vars_.items()}
+            data["tab"] = tab
             data["complex_name"] = tab
-            data["address_detail"] = f"{dong}동 {ho}호" if dong and ho else ""
-            data["floor"] = self._infer_floor_from_ho(ho)
-            data["total_floor"] = self._get_total_floor(tab, dong)
-            add_property(data)
+
+            if unit_master.has_master(tab):
+                floor_num = int(floor or 0)
+                info = unit_master.get_unit_info(tab, dong, floor_num, ho)
+                data["unit_type"] = str(info.get("type") or "")
+                data["area"] = info.get("supply_m2") or 0
+                data["pyeong"] = info.get("pyeong") or 0
+                data["floor"] = str(floor_num) if floor_num else ""
+                total_floor = unit_master.get_total_floor(tab, dong)
+                data["total_floor"] = str(total_floor) if total_floor else ""
+                data["address_detail"] = f"{dong} {ho}호" if dong and ho else ""
+            else:
+                data["address_detail"] = f"{dong} {ho}호" if dong and ho else ""
+
+            try:
+                add_property(data)
+            except Exception as exc:
+                messagebox.showerror("저장 실패", str(exc))
+                return
+
             self.refresh_all()
+            messagebox.showinfo("저장 완료", "물건이 저장되었습니다.")
             win.destroy()
 
         btm = ttk.Frame(win)
