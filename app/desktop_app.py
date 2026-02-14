@@ -341,7 +341,7 @@ class LedgerDesktopApp:
     def open_add_task_window(self, *, default_entity_type: str = "", default_entity_id: int | None = None):
         win = tk.Toplevel(self.root)
         win.title("새 할 일 추가")
-        win.geometry("620x460")
+        win.geometry("700x520")
 
         selected_properties: list[int] = []
         selected_customer: int | None = None
@@ -357,13 +357,21 @@ class LedgerDesktopApp:
             "hh": tk.IntVar(value=now.hour),
             "mm": tk.IntVar(value=(now.minute // 10) * 10),
         }
-        selected_summary = tk.StringVar(value="선택된 대상 없음")
+        selected_summary = tk.StringVar(value="고객: - / 물건: -")
+        arrange_guide_var = tk.StringVar(value="")
 
         frm = ttk.Frame(win)
         frm.pack(fill="both", expand=True, padx=12, pady=12)
 
         ttk.Label(frm, text="할 일 종류").grid(row=0, column=0, sticky="e", padx=6, pady=6)
-        ttk.Combobox(frm, textvariable=task_type_var, state="readonly", width=36, values=["상담 예약", "집/상가 방문", "약속 어레인지", "계약 / 잔금 일정", "기타"]).grid(row=0, column=1, sticky="w", padx=6, pady=6)
+        task_type_cb = ttk.Combobox(
+            frm,
+            textvariable=task_type_var,
+            state="readonly",
+            width=36,
+            values=["상담 예약", "집/상가 방문", "약속 어레인지", "계약 / 잔금 일정", "기타"],
+        )
+        task_type_cb.grid(row=0, column=1, sticky="w", padx=6, pady=6)
 
         ttk.Label(frm, text="일시").grid(row=1, column=0, sticky="e", padx=6, pady=6)
         dt = ttk.Frame(frm)
@@ -393,18 +401,49 @@ class LedgerDesktopApp:
         def render_summary():
             selected_summary.set(f"고객: {selected_customer or '-'} / 물건: {', '.join(map(str, selected_properties)) or '-'}")
 
+        def update_arrange_guide(_=None):
+            if task_type_var.get().strip() == "약속 어레인지":
+                arrange_guide_var.set("안내: 1) 고객 1명 선택 → 2) 물건 1개 이상 체크 → 저장 시 물건 수만큼 할 일이 생성됩니다.")
+            else:
+                arrange_guide_var.set("")
+
         def choose_property():
             nonlocal selected_properties
             rows = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
+            if not rows:
+                popup = tk.Toplevel(win)
+                popup.title("물건 선택")
+                popup.geometry("420x150")
+                ttk.Label(popup, text="등록된 물건이 없습니다. 먼저 물건 등록을 해주세요.").pack(padx=12, pady=12, anchor="w")
+                btns = ttk.Frame(popup)
+                btns.pack(pady=8)
+                ttk.Button(btns, text="물건 등록 열기", command=lambda: (popup.destroy(), self.open_property_wizard())).pack(side="left", padx=4)
+                ttk.Button(btns, text="닫기", command=popup.destroy).pack(side="left", padx=4)
+                return
+
             popup = tk.Toplevel(win)
             popup.title("물건 선택")
+            popup.geometry("620x420")
             search_var = tk.StringVar(value="")
+            selected_count_var = tk.StringVar(value=f"선택 {len(selected_properties)}건")
+            picked_ids = set(selected_properties)
+
             ttk.Entry(popup, textvariable=search_var, width=40).pack(padx=8, pady=4, anchor="w")
-            tree = ttk.Treeview(popup, columns=("id", "tab", "addr"), show="headings", selectmode="extended")
-            for c in ("id", "tab", "addr"):
-                tree.heading(c, text=c)
+            tree = ttk.Treeview(popup, columns=("pick", "id", "tab", "addr"), show="headings")
+            tree.heading("pick", text="선택")
+            tree.heading("id", text="번호")
+            tree.heading("tab", text="단지")
+            tree.heading("addr", text="주소")
+            tree.column("pick", width=56, anchor="center")
+            tree.column("id", width=64, anchor="center")
+            tree.column("tab", width=180)
+            tree.column("addr", width=260)
             tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+            item_to_id: dict[str, int] = {}
+
             def render():
+                item_to_id.clear()
                 for item in tree.get_children():
                     tree.delete(item)
                 q = search_var.get().strip().lower()
@@ -412,22 +451,46 @@ class LedgerDesktopApp:
                     hay = f"{r.get('tab','')} {r.get('address_detail','')} {r.get('owner_phone','')}".lower()
                     if q and q not in hay:
                         continue
-                    tree.insert("", "end", values=(r.get("id"), r.get("tab"), r.get("address_detail")))
+                    pid = int(r.get("id") or 0)
+                    mark = "☑" if pid in picked_ids else "☐"
+                    iid = tree.insert("", "end", values=(mark, pid, r.get("tab"), r.get("address_detail")))
+                    item_to_id[iid] = pid
+                selected_count_var.set(f"선택 {len(picked_ids)}건")
+
+            def toggle_item(item: str):
+                pid = item_to_id.get(item)
+                if not pid:
+                    return
+                if pid in picked_ids:
+                    picked_ids.remove(pid)
+                else:
+                    picked_ids.add(pid)
+                mark = "☑" if pid in picked_ids else "☐"
+                vals = list(tree.item(item, "values"))
+                vals[0] = mark
+                tree.item(item, values=vals)
+                selected_count_var.set(f"선택 {len(picked_ids)}건")
+
+            def on_click(event):
+                item = tree.identify_row(event.y)
+                if item:
+                    toggle_item(item)
+
             search_var.trace_add("write", lambda *_: render())
+            tree.bind("<Button-1>", on_click)
             render()
 
+            bottom = ttk.Frame(popup)
+            bottom.pack(fill="x", padx=8, pady=6)
+            ttk.Label(bottom, textvariable=selected_count_var, foreground="#2f4f4f").pack(side="left")
+
             def done():
-                ids = []
-                for item in tree.selection():
-                    try:
-                        ids.append(int(tree.item(item, "values")[0]))
-                    except Exception:
-                        pass
-                selected_properties = ids
+                nonlocal selected_properties
+                selected_properties = sorted(picked_ids)
                 render_summary()
                 popup.destroy()
 
-            ttk.Button(popup, text="선택 완료", command=done).pack(pady=6)
+            ttk.Button(bottom, text="선택 완료", command=done).pack(side="right")
 
         def choose_customer():
             nonlocal selected_customer
@@ -440,6 +503,7 @@ class LedgerDesktopApp:
             for c in ("id", "name", "phone"):
                 tree.heading(c, text=c)
             tree.pack(fill="both", expand=True, padx=8, pady=8)
+
             def render():
                 for item in tree.get_children():
                     tree.delete(item)
@@ -451,6 +515,7 @@ class LedgerDesktopApp:
                     if q and q.lower() not in hay and (not qd or qd not in phone):
                         continue
                     tree.insert("", "end", values=(r.get("id"), r.get("customer_name"), r.get("phone")))
+
             search_var.trace_add("write", lambda *_: render())
             render()
 
@@ -470,9 +535,10 @@ class LedgerDesktopApp:
         ttk.Button(sel_btns, text="고객 선택", command=choose_customer).pack(side="left", padx=2)
         ttk.Button(sel_btns, text="물건 선택", command=choose_property).pack(side="left", padx=2)
         ttk.Label(frm, textvariable=selected_summary, foreground="#555").grid(row=5, column=1, sticky="w", padx=6, pady=2)
+        ttk.Label(frm, textvariable=arrange_guide_var, foreground="#8b4513").grid(row=6, column=1, sticky="w", padx=6, pady=2)
 
-        ttk.Label(frm, text="메모").grid(row=6, column=0, sticky="e", padx=6, pady=6)
-        ttk.Entry(frm, textvariable=note_var, width=42).grid(row=6, column=1, sticky="w", padx=6, pady=6)
+        ttk.Label(frm, text="메모").grid(row=7, column=0, sticky="e", padx=6, pady=6)
+        ttk.Entry(frm, textvariable=note_var, width=42).grid(row=7, column=1, sticky="w", padx=6, pady=6)
 
         def save():
             title = task_type_var.get().strip()
@@ -517,9 +583,13 @@ class LedgerDesktopApp:
             win.destroy()
 
         btns = ttk.Frame(frm)
-        btns.grid(row=7, column=1, sticky="w", padx=6, pady=12)
+        btns.grid(row=8, column=1, sticky="w", padx=6, pady=12)
         ttk.Button(btns, text="저장", command=save).pack(side="left", padx=4)
         ttk.Button(btns, text="취소", command=win.destroy).pack(side="left", padx=4)
+
+        task_type_cb.bind("<<ComboboxSelected>>", update_arrange_guide)
+        render_summary()
+        update_arrange_guide()
 
     def _build_property_ui(self):
         top = ttk.LabelFrame(self.property_tab, text="물건")
@@ -541,17 +611,27 @@ class LedgerDesktopApp:
         self.inner_tabs.pack(fill="both", expand=True, padx=10, pady=8)
         self.prop_trees: dict[str, ttk.Treeview] = {}
 
-        cols = ("id", "status", "complex_name", "address_detail", "unit_type", "floor", "price_summary", "updated_at")
+        cols = ("status", "complex_name", "address_detail", "unit_type", "floor", "price_summary", "updated_at", "id")
         col_defs = [
-            ("id", 55),
             ("status", 90),
-            ("complex_name", 200),
-            ("address_detail", 160),
-            ("unit_type", 110),
+            ("complex_name", 180),
+            ("address_detail", 170),
+            ("unit_type", 100),
             ("floor", 70),
-            ("price_summary", 240),
-            ("updated_at", 150),
+            ("price_summary", 250),
+            ("updated_at", 145),
+            ("id", 1),
         ]
+        col_labels = {
+            "status": "상태",
+            "complex_name": "단지",
+            "address_detail": "동/호",
+            "unit_type": "타입",
+            "floor": "층",
+            "price_summary": "가격요약",
+            "updated_at": "업데이트",
+            "id": "",
+        }
 
         for tab_name in PROPERTY_TABS:
             frame = ttk.Frame(self.inner_tabs)
@@ -559,8 +639,10 @@ class LedgerDesktopApp:
 
             tree = ttk.Treeview(frame, columns=cols, show="headings", height=17)
             for c, w in col_defs:
-                tree.heading(c, text=c, command=lambda col=c, t=tree: self.sort_tree(t, col))
-                tree.column(c, width=w)
+                tree.heading(c, text=col_labels.get(c, c), command=lambda col=c, t=tree: self.sort_tree(t, col))
+                tree.column(c, width=w, stretch=(c != "id"))
+                if c == "id":
+                    tree.column(c, minwidth=0, width=0, stretch=False)
             tree.pack(fill="both", expand=True)
             tree.bind("<Double-1>", lambda e, t=tab_name: self._on_double_click_property(e, t))
             self.prop_trees[tab_name] = tree
@@ -626,7 +708,6 @@ class LedgerDesktopApp:
                     "",
                     "end",
                     values=(
-                        row.get("id"),
                         row.get("status"),
                         row.get("complex_name"),
                         row.get("address_detail"),
@@ -634,6 +715,7 @@ class LedgerDesktopApp:
                         row.get("floor"),
                         self._calc_price_summary(row),
                         row.get("updated_at"),
+                        row.get("id"),
                     ),
                 )
 
@@ -881,7 +963,10 @@ class LedgerDesktopApp:
         if not selected:
             return None
         try:
-            return int(tree.item(selected[0], "values")[0])
+            values = list(tree.item(selected[0], "values"))
+            if not values:
+                return None
+            return int(values[-1])
         except Exception:
             return None
     
