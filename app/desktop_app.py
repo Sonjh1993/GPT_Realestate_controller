@@ -1097,7 +1097,7 @@ class LedgerDesktopApp:
     def open_property_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("물건 등록")
-        self._fit_toplevel(win, 760, 620)
+        self._fit_toplevel(win, 860, 700)
 
         vars_ = {
             "tab": tk.StringVar(value=PROPERTY_TABS[0]),
@@ -1136,39 +1136,105 @@ class LedgerDesktopApp:
             "note": tk.StringVar(value=""),
         }
 
-        nb = ttk.Notebook(win)
-        nb.pack(fill="both", expand=True, padx=10, pady=10)
-        s1=ttk.Frame(nb); s2=ttk.Frame(nb); s3=ttk.Frame(nb); s4=ttk.Frame(nb)
-        nb.add(s1, text="1단계 기본")
-        nb.add(s2, text="2단계 거래/가격")
-        nb.add(s3, text="3단계 컨디션")
-        nb.add(s4, text="4단계 연락/방문")
+        header = ttk.Frame(win)
+        header.pack(fill="x", padx=10, pady=(10, 4))
+        progress_var = tk.StringVar(value="1/3 단계: 기본 정보")
+        ttk.Label(header, textvariable=progress_var).pack(anchor="w")
 
-        ttk.Label(s1, text="단지").grid(row=0, column=0, padx=6, pady=6, sticky="e")
-        tab_cb = ttk.Combobox(s1, textvariable=vars_["tab"], values=PROPERTY_TABS, state="readonly", width=26)
+        body = ttk.Frame(win)
+        body.pack(fill="both", expand=True, padx=10, pady=6)
+
+        step1 = ttk.Frame(body)
+        step2 = ttk.Frame(body)
+        step3 = ttk.Frame(body)
+        steps = [step1, step2, step3]
+        step_titles = ["기본 정보", "거래/가격", "연락/메모"]
+
+        # Step1
+        ttk.Label(step1, text="단지").grid(row=0, column=0, padx=6, pady=6, sticky="e")
+        tab_cb = ttk.Combobox(step1, textvariable=vars_["tab"], values=PROPERTY_TABS, state="readonly", width=26)
         tab_cb.grid(row=0, column=1, padx=6, pady=6, sticky="w")
-
-        ttk.Label(s1, text="동").grid(row=1, column=0, padx=6, pady=6, sticky="e")
-        dong_cb = ttk.Combobox(s1, textvariable=vars_["dong"], state="readonly", width=26)
+        ttk.Label(step1, text="동").grid(row=1, column=0, padx=6, pady=6, sticky="e")
+        dong_cb = ttk.Combobox(step1, textvariable=vars_["dong"], state="readonly", width=26)
         dong_cb.grid(row=1, column=1, padx=6, pady=6, sticky="w")
-
-        ttk.Label(s1, text="층").grid(row=2, column=0, padx=6, pady=6, sticky="e")
-        floor_cb = ttk.Combobox(s1, textvariable=vars_["floor"], state="readonly", width=26)
+        ttk.Label(step1, text="층").grid(row=2, column=0, padx=6, pady=6, sticky="e")
+        floor_cb = ttk.Combobox(step1, textvariable=vars_["floor"], state="readonly", width=26)
         floor_cb.grid(row=2, column=1, padx=6, pady=6, sticky="w")
-
-        ttk.Label(s1, text="호").grid(row=3, column=0, padx=6, pady=6, sticky="e")
-        ho_cb = ttk.Combobox(s1, textvariable=vars_["ho"], state="readonly", width=26)
+        ttk.Label(step1, text="호").grid(row=3, column=0, padx=6, pady=6, sticky="e")
+        ho_cb = ttk.Combobox(step1, textvariable=vars_["ho"], state="readonly", width=26)
         ho_cb.grid(row=3, column=1, padx=6, pady=6, sticky="w")
-
-        ttk.Label(s1, text="면적타입").grid(row=4, column=0, padx=6, pady=6, sticky="e")
-        ttk.Label(s1, textvariable=vars_["unit_type"]).grid(row=4, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="면적(㎡)").grid(row=5, column=0, padx=6, pady=6, sticky="e")
-        ttk.Label(s1, textvariable=vars_["area"]).grid(row=5, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(s1, text="평형").grid(row=6, column=0, padx=6, pady=6, sticky="e")
-        ttk.Label(s1, textvariable=vars_["pyeong"]).grid(row=6, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step1, text="면적타입").grid(row=4, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(step1, textvariable=vars_["unit_type"]).grid(row=4, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step1, text="면적(㎡)").grid(row=5, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(step1, textvariable=vars_["area"]).grid(row=5, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step1, text="평형").grid(row=6, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(step1, textvariable=vars_["pyeong"]).grid(row=6, column=1, padx=6, pady=6, sticky="w")
 
         manual_hint = tk.StringVar(value="")
-        ttk.Label(s1, textvariable=manual_hint, foreground="#555").grid(row=7, column=0, columnspan=2, padx=6, pady=2, sticky="w")
+        ttk.Label(step1, textvariable=manual_hint, foreground="#555").grid(row=7, column=0, columnspan=2, padx=6, pady=2, sticky="w")
+
+        # Step2
+        ttk.Checkbutton(step2, text="매도", variable=vars_["deal_sale"]).grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        ttk.Entry(step2, textvariable=vars_["price_sale_eok"], width=8).grid(row=0, column=1)
+        ttk.Label(step2, text="억").grid(row=0, column=2)
+        ttk.Entry(step2, textvariable=vars_["price_sale_che"], width=8).grid(row=0, column=3)
+        ttk.Label(step2, text="천").grid(row=0, column=4)
+
+        ttk.Checkbutton(step2, text="전세", variable=vars_["deal_jeonse"]).grid(row=1, column=0, padx=6, pady=6, sticky="w")
+        ttk.Entry(step2, textvariable=vars_["price_jeonse_eok"], width=8).grid(row=1, column=1)
+        ttk.Label(step2, text="억").grid(row=1, column=2)
+        ttk.Entry(step2, textvariable=vars_["price_jeonse_che"], width=8).grid(row=1, column=3)
+        ttk.Label(step2, text="천").grid(row=1, column=4)
+
+        ttk.Checkbutton(step2, text="월세", variable=vars_["deal_wolse"]).grid(row=2, column=0, padx=6, pady=6, sticky="w")
+        ttk.Entry(step2, textvariable=vars_["wolse_deposit_eok"], width=8).grid(row=2, column=1)
+        ttk.Label(step2, text="억").grid(row=2, column=2)
+        ttk.Entry(step2, textvariable=vars_["wolse_deposit_che"], width=8).grid(row=2, column=3)
+        ttk.Label(step2, text="천").grid(row=2, column=4)
+        ttk.Entry(step2, textvariable=vars_["wolse_rent_man"], width=8).grid(row=2, column=5)
+        ttk.Label(step2, text="만원").grid(row=2, column=6)
+
+        ttk.Label(step2, text="상태").grid(row=3, column=0, padx=6, pady=6, sticky="e")
+        ttk.Combobox(step2, textvariable=vars_["status"], values=PROPERTY_STATUS_VALUES, state="readonly", width=20).grid(row=3, column=1, columnspan=2, padx=6, pady=6, sticky="w")
+        ttk.Label(step2, text="컨디션").grid(row=4, column=0, padx=6, pady=6, sticky="e")
+        ttk.Combobox(step2, textvariable=vars_["condition"], values=["상", "중", "하"], state="readonly", width=20).grid(row=4, column=1, columnspan=2, padx=6, pady=6, sticky="w")
+
+        # Step3
+        ttk.Label(step3, text="집주인명").grid(row=0, column=0, padx=6, pady=6, sticky="e")
+        ttk.Entry(step3, textvariable=vars_["owner_name"], width=26).grid(row=0, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step3, text="집주인 전화*").grid(row=1, column=0, padx=6, pady=6, sticky="e")
+        ttk.Entry(step3, textvariable=vars_["owner_phone"], width=26).grid(row=1, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step3, text="세입자 전화").grid(row=2, column=0, padx=6, pady=6, sticky="e")
+        ttk.Entry(step3, textvariable=vars_["tenant_phone"], width=26).grid(row=2, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step3, text="입주 가능일").grid(row=3, column=0, padx=6, pady=6, sticky="e")
+
+        move_mode = tk.StringVar(value="협의")
+        move_y = tk.IntVar(value=datetime.now().year)
+        move_m = tk.IntVar(value=datetime.now().month)
+        move_d = tk.IntVar(value=datetime.now().day)
+        move_wrap = ttk.Frame(step3)
+        move_wrap.grid(row=3, column=1, padx=6, pady=6, sticky="w")
+        move_mode_cb = ttk.Combobox(move_wrap, textvariable=move_mode, values=["즉시", "협의", "날짜선택"], state="readonly", width=10)
+        move_mode_cb.pack(side="left")
+        date_wrap = ttk.Frame(move_wrap)
+        ttk.Spinbox(date_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side="left")
+        ttk.Spinbox(date_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side="left", padx=2)
+        ttk.Spinbox(date_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side="left", padx=2)
+
+        def refresh_move_ui(*_a):
+            if move_mode.get() == "날짜선택":
+                if not date_wrap.winfo_ismapped():
+                    date_wrap.pack(side="left", padx=6)
+            else:
+                if date_wrap.winfo_ismapped():
+                    date_wrap.pack_forget()
+
+        move_mode_cb.bind("<<ComboboxSelected>>", refresh_move_ui)
+        refresh_move_ui()
+
+        ttk.Label(step3, text="메모").grid(row=4, column=0, padx=6, pady=6, sticky="ne")
+        ttk.Entry(step3, textvariable=vars_["special_notes"], width=40).grid(row=4, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(step3, text="사진은 저장 후 상세창 [사진] 탭에서 업로드", foreground="#555").grid(row=5, column=0, columnspan=2, padx=6, pady=6, sticky="w")
 
         def reset_auto_values():
             vars_["unit_type"].set("")
@@ -1228,8 +1294,7 @@ class LedgerDesktopApp:
 
         def on_tab_change(_=None):
             tab = vars_["tab"].get().strip()
-            is_auto = unit_master.has_master(tab)
-            if is_auto:
+            if unit_master.has_master(tab):
                 dongs = unit_master.get_dongs(tab)
                 if not dongs:
                     set_manual_mode("CSV 데이터가 비어 있어 수동 입력 모드로 전환했습니다.")
@@ -1249,58 +1314,66 @@ class LedgerDesktopApp:
         ho_cb.bind("<<ComboboxSelected>>", lambda _e: refresh_unit_info())
         on_tab_change()
 
-        ttk.Checkbutton(s2, text="매도", variable=vars_["deal_sale"]).grid(row=0,column=0,padx=6,pady=6,sticky="w")
-        ttk.Entry(s2, textvariable=vars_["price_sale_eok"], width=8).grid(row=0,column=1); ttk.Label(s2,text="억").grid(row=0,column=2)
-        ttk.Entry(s2, textvariable=vars_["price_sale_che"], width=8).grid(row=0,column=3); ttk.Label(s2,text="천").grid(row=0,column=4)
-        ttk.Checkbutton(s2, text="전세", variable=vars_["deal_jeonse"]).grid(row=1,column=0,padx=6,pady=6,sticky="w")
-        ttk.Entry(s2, textvariable=vars_["price_jeonse_eok"], width=8).grid(row=1,column=1); ttk.Label(s2,text="억").grid(row=1,column=2)
-        ttk.Entry(s2, textvariable=vars_["price_jeonse_che"], width=8).grid(row=1,column=3); ttk.Label(s2,text="천").grid(row=1,column=4)
-        ttk.Checkbutton(s2, text="월세", variable=vars_["deal_wolse"]).grid(row=2,column=0,padx=6,pady=6,sticky="w")
-        ttk.Entry(s2, textvariable=vars_["wolse_deposit_eok"], width=8).grid(row=2,column=1); ttk.Label(s2,text="억").grid(row=2,column=2)
-        ttk.Entry(s2, textvariable=vars_["wolse_deposit_che"], width=8).grid(row=2,column=3); ttk.Label(s2,text="천").grid(row=2,column=4)
-        ttk.Entry(s2, textvariable=vars_["wolse_rent_man"], width=8).grid(row=2,column=5); ttk.Label(s2,text="만원").grid(row=2,column=6)
+        def _is_non_negative_int(v: str) -> bool:
+            v = v.strip()
+            return v.isdigit() if v else False
 
-        ttk.Label(s3, text="컨디션").grid(row=0,column=0,padx=6,pady=6,sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["condition"], values=["상","중","하"], state="readonly").grid(row=0,column=1,padx=6,pady=6,sticky="w")
-        ttk.Label(s3, text="뷰").grid(row=1,column=0,padx=6,pady=6,sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["view"], values=["탁 트인 뷰","일부 가린 뷰","기타"], state="readonly").grid(row=1,column=1,padx=6,pady=6,sticky="w")
-        ttk.Label(s3, text="향").grid(row=2,column=0,padx=6,pady=6,sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["orientation"], values=["남향","동향","서향","북향","기타"], state="readonly").grid(row=2,column=1,padx=6,pady=6,sticky="w")
-        ttk.Label(s3, text="상태").grid(row=3,column=0,padx=6,pady=6,sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["status"], values=PROPERTY_STATUS_VALUES, state="readonly").grid(row=3,column=1,padx=6,pady=6,sticky="w")
-        ttk.Checkbutton(s3, text="수리 필요", variable=vars_["repair_needed"]).grid(row=4,column=0,padx=6,pady=6,sticky="w")
-        ttk.Label(s3, text="수리 항목(쉼표구분)").grid(row=5,column=0,padx=6,pady=6,sticky="e")
-        ttk.Entry(s3, textvariable=vars_["repair_items"], width=36).grid(row=5,column=1,padx=6,pady=6,sticky="w")
+        def validate_step(idx: int) -> bool:
+            tab = vars_["tab"].get().strip()
+            if idx == 0:
+                if unit_master.has_master(tab):
+                    if not (vars_["dong"].get().strip() and vars_["floor"].get().strip() and vars_["ho"].get().strip()):
+                        messagebox.showwarning("입력 확인", "아파트 물건은 단지/동/층/호를 모두 선택해주세요.")
+                        return False
+                return True
+            if idx == 1:
+                if not (vars_["deal_sale"].get() or vars_["deal_jeonse"].get() or vars_["deal_wolse"].get()):
+                    messagebox.showwarning("입력 확인", "거래유형을 최소 1개 선택해주세요.")
+                    return False
+                nums = []
+                if vars_["deal_sale"].get():
+                    nums += [vars_["price_sale_eok"].get(), vars_["price_sale_che"].get()]
+                if vars_["deal_jeonse"].get():
+                    nums += [vars_["price_jeonse_eok"].get(), vars_["price_jeonse_che"].get()]
+                if vars_["deal_wolse"].get():
+                    nums += [vars_["wolse_deposit_eok"].get(), vars_["wolse_deposit_che"].get(), vars_["wolse_rent_man"].get()]
+                if any(not _is_non_negative_int(n) for n in nums):
+                    messagebox.showwarning("입력 확인", "가격 입력은 숫자(0 포함)만 가능합니다.")
+                    return False
+                return True
+            if idx == 2:
+                if not vars_["owner_phone"].get().strip():
+                    messagebox.showwarning("입력 확인", "집주인 전화번호(필수)를 입력해주세요.")
+                    return False
+                return True
+            return True
 
-        fields=[("집주인명","owner_name"),("집주인 전화*","owner_phone"),("집주인 상황","owner_status"),("세입자 전화","tenant_phone")]
-        for i,(label,k) in enumerate(fields):
-            ttk.Label(s4,text=label).grid(row=i,column=0,padx=6,pady=6,sticky='e')
-            ttk.Entry(s4,textvariable=vars_[k],width=32).grid(row=i,column=1,padx=6,pady=6,sticky='w')
+        current = {"idx": 0}
 
-        move_mode = tk.StringVar(value="즉시")
-        move_y = tk.IntVar(value=datetime.now().year)
-        move_m = tk.IntVar(value=datetime.now().month)
-        move_d = tk.IntVar(value=datetime.now().day)
-        ttk.Label(s4, text="입주 가능일").grid(row=4,column=0,padx=6,pady=6,sticky='e')
-        move_wrap = ttk.Frame(s4)
-        move_wrap.grid(row=4,column=1,padx=6,pady=6,sticky='w')
-        ttk.Combobox(move_wrap, textvariable=move_mode, values=["즉시","협의","날짜선택"], state='readonly', width=10).pack(side='left')
-        ttk.Spinbox(move_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side='left', padx=2)
-        ttk.Spinbox(move_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side='left', padx=2)
-        ttk.Spinbox(move_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side='left', padx=2)
+        def show_step(idx: int):
+            for frm in steps:
+                frm.pack_forget()
+            steps[idx].pack(fill="both", expand=True)
+            progress_var.set(f"{idx + 1}/3 단계: {step_titles[idx]}")
+            prev_btn.configure(state=("normal" if idx > 0 else "disabled"))
+            next_btn.configure(state=("normal" if idx < len(steps) - 1 else "disabled"))
+            save_btn.configure(state=("normal" if idx == len(steps) - 1 else "disabled"))
 
-        ttk.Label(s4, text="거주형태").grid(row=5,column=0,padx=6,pady=6,sticky='e')
-        ttk.Combobox(s4,textvariable=vars_["resident_type"],values=["주인거주","세입자거주"],state='readonly').grid(row=5,column=1,padx=6,pady=6,sticky='w')
-        ttk.Label(s4, text="방문 협조").grid(row=6,column=0,padx=6,pady=6,sticky='e')
-        ttk.Combobox(s4,textvariable=vars_["visit_coop"],values=["협조","비협조"],state='readonly').grid(row=6,column=1,padx=6,pady=6,sticky='w')
-        ttk.Label(s4, text="연락 협조").grid(row=7,column=0,padx=6,pady=6,sticky='e')
-        ttk.Combobox(s4,textvariable=vars_["contact_coop"],values=["협조","비협조"],state='readonly').grid(row=7,column=1,padx=6,pady=6,sticky='w')
-        ttk.Label(s4, text="방문 조건").grid(row=8,column=0,padx=6,pady=6,sticky='e')
-        ttk.Combobox(s4,textvariable=vars_["visit_condition"],values=["집에 있을때만","집에없어도 가능","미리 약속 필요"],state='readonly').grid(row=8,column=1,padx=6,pady=6,sticky='w')
+        def go_prev():
+            if current["idx"] > 0:
+                current["idx"] -= 1
+                show_step(current["idx"])
+
+        def go_next():
+            idx = current["idx"]
+            if not validate_step(idx):
+                return
+            if idx < len(steps) - 1:
+                current["idx"] += 1
+                show_step(current["idx"])
 
         def save():
-            if not vars_["owner_phone"].get().strip():
-                messagebox.showwarning("입력 확인", "집주인 전화번호(필수)를 입력해주세요. 4단계 연락/방문 탭의 '집주인 전화*' 칸입니다.")
+            if not validate_step(current["idx"]):
                 return
 
             tab = vars_["tab"].get().strip()
@@ -1308,23 +1381,19 @@ class LedgerDesktopApp:
             floor = vars_["floor"].get().strip()
             ho = vars_["ho"].get().strip()
 
-            data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k,v in vars_.items()}
+            data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k, v in vars_.items()}
             mode = move_mode.get().strip()
-            if mode == "날짜선택":
-                data["move_available_date"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}"
-            else:
-                data["move_available_date"] = mode
+            data["move_available_date"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if mode == "날짜선택" else mode
             data["tab"] = tab
             data["complex_name"] = tab
 
             if unit_master.has_master(tab):
-                if not (dong and floor and ho):
-                    messagebox.showwarning("입력 확인", "아파트 물건은 동/층/호를 모두 선택해주세요.")
-                    return
                 floor_num = int(floor or 0)
                 info = unit_master.get_unit_info(tab, dong, floor_num, ho)
                 if not info.get("type"):
-                    messagebox.showwarning("입력 확인", "선택한 동/층/호에 대한 타입 정보를 찾지 못했습니다. 다시 선택해주세요.")
+                    messagebox.showwarning("입력 확인", "선택한 동/층/호에 대한 타입 정보를 찾지 못했습니다.")
+                    current["idx"] = 0
+                    show_step(0)
                     return
                 data["unit_type"] = str(info.get("type") or "")
                 data["area"] = info.get("supply_m2") or 0
@@ -1346,10 +1415,18 @@ class LedgerDesktopApp:
             messagebox.showinfo("저장 완료", "물건이 저장되었습니다.")
             win.destroy()
 
-        btm = ttk.Frame(win)
-        btm.pack(fill="x", padx=10, pady=10)
-        ttk.Button(btm, text="저장", command=save).pack(side="left", padx=4)
-        ttk.Button(btm, text="취소", command=win.destroy).pack(side="left", padx=4)
+        footer = ttk.Frame(win)
+        footer.pack(fill="x", padx=10, pady=10)
+        prev_btn = ttk.Button(footer, text="이전", command=go_prev)
+        next_btn = ttk.Button(footer, text="다음", command=go_next)
+        save_btn = ttk.Button(footer, text="저장", command=save)
+        cancel_btn = ttk.Button(footer, text="취소", command=win.destroy)
+        prev_btn.pack(side="left", padx=4)
+        next_btn.pack(side="left", padx=4)
+        save_btn.pack(side="left", padx=4)
+        cancel_btn.pack(side="left", padx=4)
+
+        show_step(0)
 
     def _selected_id_from_tree(self, tree: ttk.Treeview, *, value_index: int = -1) -> int | None:
         selected = tree.selection()
@@ -1542,7 +1619,7 @@ class LedgerDesktopApp:
     def open_customer_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("고객 등록")
-        self._fit_toplevel(win, 700, 620)
+        self._fit_toplevel(win, 820, 660)
 
         vars_ = {
             "customer_name": tk.StringVar(),
@@ -1563,81 +1640,142 @@ class LedgerDesktopApp:
             "status": tk.StringVar(value="문의"),
         }
 
-        nb = ttk.Notebook(win)
-        nb.pack(fill="both", expand=True, padx=10, pady=10)
-        s1 = ttk.Frame(nb)
-        s2 = ttk.Frame(nb)
-        s3 = ttk.Frame(nb)
-        nb.add(s1, text="1단계 기본")
-        nb.add(s2, text="2단계 희망조건")
-        nb.add(s3, text="3단계 메모/상태")
+        header = ttk.Frame(win)
+        header.pack(fill="x", padx=10, pady=(10, 4))
+        progress_var = tk.StringVar(value="1/3 단계: 기본")
+        ttk.Label(header, textvariable=progress_var).pack(anchor="w")
 
-        # 1단계 기본
+        body = ttk.Frame(win)
+        body.pack(fill="both", expand=True, padx=10, pady=6)
+        s1 = ttk.Frame(body)
+        s2 = ttk.Frame(body)
+        s3 = ttk.Frame(body)
+        steps = [s1, s2, s3]
+        step_titles = ["기본", "희망조건", "일정/메모"]
+
+        # Step1
         ttk.Label(s1, text="고객명").grid(row=0, column=0, padx=6, pady=8, sticky="e")
         ttk.Entry(s1, textvariable=vars_["customer_name"], width=32).grid(row=0, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s1, text="전화번호*").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Label(s1, text="전화번호").grid(row=1, column=0, padx=6, pady=8, sticky="e")
         ttk.Entry(s1, textvariable=vars_["phone"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s1, text="희망 단지").grid(row=2, column=0, padx=6, pady=8, sticky="e")
-        pref_tab_wrap = ttk.Frame(s1)
-        pref_tab_wrap.grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="상태").grid(row=2, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s1, textvariable=vars_["status"], values=CUSTOMER_STATUS_VALUES, state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+
+        # Step2
+        ttk.Label(s2, text="희망 유형").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        pref_tab_wrap = ttk.Frame(s2)
+        pref_tab_wrap.grid(row=0, column=1, padx=6, pady=8, sticky="w")
         ttk.Entry(pref_tab_wrap, textvariable=vars_["preferred_tab"], width=24, state="readonly").pack(side="left")
         ttk.Button(pref_tab_wrap, text="선택", command=lambda: (lambda v: vars_["preferred_tab"].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_["preferred_tab"].get()))).pack(side="left", padx=4)
-        ttk.Label(s1, text="거래유형").grid(row=3, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s1, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s1, text="입주 희망일").grid(row=4, column=0, padx=6, pady=8, sticky="e")
-        move_wrap = ttk.Frame(s1)
-        move_wrap.grid(row=4, column=1, padx=6, pady=8, sticky="w")
-        move_y = tk.IntVar(value=datetime.now().year)
-        move_m = tk.IntVar(value=datetime.now().month)
-        move_d = tk.IntVar(value=datetime.now().day)
-        ttk.Spinbox(move_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side="left")
-        ttk.Spinbox(move_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side="left", padx=2)
-        ttk.Spinbox(move_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side="left", padx=2)
-        ttk.Button(move_wrap, text="오늘", command=lambda: (move_y.set(datetime.now().year), move_m.set(datetime.now().month), move_d.set(datetime.now().day))).pack(side="left", padx=2)
-        ttk.Button(move_wrap, text="내일", command=lambda: (move_y.set((datetime.now()+timedelta(days=1)).year), move_m.set((datetime.now()+timedelta(days=1)).month), move_d.set((datetime.now()+timedelta(days=1)).day))).pack(side="left", padx=2)
-        ttk.Button(move_wrap, text="+7일", command=lambda: (move_y.set((datetime.now()+timedelta(days=7)).year), move_m.set((datetime.now()+timedelta(days=7)).month), move_d.set((datetime.now()+timedelta(days=7)).day))).pack(side="left", padx=2)
 
-        ttk.Label(s1, text="희망 거래가").grid(row=5, column=0, padx=6, pady=8, sticky="e")
-        budget_wrap = ttk.Frame(s1)
-        budget_wrap.grid(row=5, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="거래유형").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s2, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="희망 크기").grid(row=2, column=0, padx=6, pady=8, sticky="e")
+        size_wrap = ttk.Frame(s2)
+        size_wrap.grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Entry(size_wrap, textvariable=vars_["size_value"], width=18).pack(side="left")
+        ttk.Combobox(size_wrap, textvariable=vars_["size_unit"], values=["㎡", "평"], state="readonly", width=8).pack(side="left", padx=4)
+        ttk.Label(s2, text="희망 거래가").grid(row=3, column=0, padx=6, pady=8, sticky="e")
+        budget_wrap = ttk.Frame(s2)
+        budget_wrap.grid(row=3, column=1, padx=6, pady=8, sticky="w")
         ttk.Entry(budget_wrap, textvariable=vars_["budget_eok"], width=8).pack(side="left")
         ttk.Label(budget_wrap, text="억").pack(side="left", padx=(2, 8))
         ttk.Entry(budget_wrap, textvariable=vars_["budget_che"], width=8).pack(side="left")
         ttk.Label(budget_wrap, text="천").pack(side="left", padx=2)
+        ttk.Label(s2, text="선호 위치").grid(row=4, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=4, column=1, padx=6, pady=8, sticky="w")
 
-        # 2단계 희망조건
-        ttk.Label(s2, text="희망 크기").grid(row=0, column=0, padx=6, pady=8, sticky="e")
-        size_wrap = ttk.Frame(s2)
-        size_wrap.grid(row=0, column=1, padx=6, pady=8, sticky="w")
-        ttk.Entry(size_wrap, textvariable=vars_["size_value"], width=18).pack(side="left")
-        ttk.Combobox(size_wrap, textvariable=vars_["size_unit"], values=["㎡", "평"], state="readonly", width=8).pack(side="left", padx=4)
+        # Step3
+        ttk.Label(s3, text="입주 희망일").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        move_mode = tk.StringVar(value="협의")
+        move_y = tk.IntVar(value=datetime.now().year)
+        move_m = tk.IntVar(value=datetime.now().month)
+        move_d = tk.IntVar(value=datetime.now().day)
+        move_wrap = ttk.Frame(s3)
+        move_wrap.grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        move_mode_cb = ttk.Combobox(move_wrap, textvariable=move_mode, values=["즉시", "협의", "날짜선택"], state="readonly", width=10)
+        move_mode_cb.pack(side="left")
+        date_wrap = ttk.Frame(move_wrap)
+        ttk.Spinbox(date_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side="left")
+        ttk.Spinbox(date_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side="left", padx=2)
+        ttk.Spinbox(date_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side="left", padx=2)
 
-        ttk.Label(s2, text="선호 위치").grid(row=1, column=0, padx=6, pady=8, sticky="e")
-        ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s2, text="층수 선호").grid(row=2, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["floor_preference"], values=["저", "중", "고", "상관없음"], state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s2, text="뷰 중요도").grid(row=3, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["view_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s2, text="컨디션 중요도").grid(row=4, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["condition_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=4, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s2, text="애완동물").grid(row=5, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["has_pet"], values=["있음", "없음"], state="readonly", width=29).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+        def refresh_move_ui(*_a):
+            if move_mode.get() == "날짜선택":
+                if not date_wrap.winfo_ismapped():
+                    date_wrap.pack(side="left", padx=6)
+            else:
+                if date_wrap.winfo_ismapped():
+                    date_wrap.pack_forget()
 
-        # 3단계 메모/상태
-        ttk.Label(s3, text="상태").grid(row=0, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["status"], values=CUSTOMER_STATUS_VALUES, state="readonly", width=29).grid(row=0, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s3, text="추가 요청사항").grid(row=1, column=0, padx=6, pady=8, sticky="ne")
-        ttk.Entry(s3, textvariable=vars_["extra_needs"], width=48).grid(row=1, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s3, text="※ 고객명/전화번호를 먼저 입력하면 이후 일정/어레인지 연결이 쉬워집니다.", foreground="#555").grid(row=2, column=0, columnspan=2, padx=6, pady=8, sticky="w")
+        move_mode_cb.bind("<<ComboboxSelected>>", refresh_move_ui)
+        refresh_move_ui()
+
+        ttk.Label(s3, text="층수 선호").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s3, textvariable=vars_["floor_preference"], values=["저", "중", "고", "상관없음"], state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="뷰 중요도").grid(row=2, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s3, textvariable=vars_["view_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="컨디션 중요도").grid(row=3, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s3, textvariable=vars_["condition_preference"], values=["중요", "비중요"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="애완동물").grid(row=4, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s3, textvariable=vars_["has_pet"], values=["있음", "없음"], state="readonly", width=29).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s3, text="추가 요청사항").grid(row=5, column=0, padx=6, pady=8, sticky="ne")
+        ttk.Entry(s3, textvariable=vars_["extra_needs"], width=48).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+
+        def _is_non_negative_int(v: str) -> bool:
+            v = v.strip()
+            return v.isdigit() if v else False
+
+        def validate_step(idx: int) -> bool:
+            if idx == 0:
+                if not (vars_["customer_name"].get().strip() or vars_["phone"].get().strip()):
+                    messagebox.showwarning("입력 확인", "고객명 또는 전화번호 중 하나는 입력해주세요.")
+                    return False
+                return True
+            if idx == 1:
+                if not vars_["deal_type"].get().strip():
+                    messagebox.showwarning("입력 확인", "거래유형을 선택해주세요.")
+                    return False
+                if any(not _is_non_negative_int(n) for n in (vars_["budget_eok"].get(), vars_["budget_che"].get())):
+                    messagebox.showwarning("입력 확인", "예산(억/천)은 숫자만 입력해주세요.")
+                    return False
+                return True
+            if idx == 2:
+                if move_mode.get().strip() not in {"즉시", "협의", "날짜선택"}:
+                    messagebox.showwarning("입력 확인", "입주희망일 방식을 선택해주세요.")
+                    return False
+                return True
+            return True
+
+        current = {"idx": 0}
+
+        def show_step(idx: int):
+            for frm in steps:
+                frm.pack_forget()
+            steps[idx].pack(fill="both", expand=True)
+            progress_var.set(f"{idx + 1}/3 단계: {step_titles[idx]}")
+            prev_btn.configure(state=("normal" if idx > 0 else "disabled"))
+            next_btn.configure(state=("normal" if idx < len(steps) - 1 else "disabled"))
+            save_btn.configure(state=("normal" if idx == len(steps) - 1 else "disabled"))
+
+        def go_prev():
+            if current["idx"] > 0:
+                current["idx"] -= 1
+                show_step(current["idx"])
+
+        def go_next():
+            idx = current["idx"]
+            if not validate_step(idx):
+                return
+            if idx < len(steps) - 1:
+                current["idx"] += 1
+                show_step(current["idx"])
 
         def save():
-            if not vars_["phone"].get().strip():
-                messagebox.showwarning("입력 확인", "전화번호(필수)를 입력해주세요.")
-                nb.select(s1)
+            if not validate_step(current["idx"]):
                 return
-
             payload = {k: v.get().strip() for k, v in vars_.items()}
-            payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}"
+            payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if move_mode.get() == "날짜선택" else move_mode.get().strip()
             payload["budget"] = f"{payload.get('budget_eok', '0')}억 {payload.get('budget_che', '0')}천"
             if payload["size_unit"] == "㎡":
                 payload["preferred_area"] = payload["size_value"]
@@ -1656,10 +1794,18 @@ class LedgerDesktopApp:
             messagebox.showinfo("저장 완료", "고객이 저장되었습니다.")
             win.destroy()
 
-        btns = ttk.Frame(win)
-        btns.pack(fill="x", padx=10, pady=10)
-        ttk.Button(btns, text="저장", command=save).pack(side="left", padx=4)
-        ttk.Button(btns, text="취소", command=win.destroy).pack(side="left", padx=4)
+        footer = ttk.Frame(win)
+        footer.pack(fill="x", padx=10, pady=10)
+        prev_btn = ttk.Button(footer, text="이전", command=go_prev)
+        next_btn = ttk.Button(footer, text="다음", command=go_next)
+        save_btn = ttk.Button(footer, text="저장", command=save)
+        cancel_btn = ttk.Button(footer, text="취소", command=win.destroy)
+        prev_btn.pack(side="left", padx=4)
+        next_btn.pack(side="left", padx=4)
+        save_btn.pack(side="left", padx=4)
+        cancel_btn.pack(side="left", padx=4)
+
+        show_step(0)
 
     def create_customer(self):
         self.open_customer_wizard()
