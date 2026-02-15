@@ -105,6 +105,10 @@ class LedgerDesktopApp:
             pass
         self._apply_ui_scale(1.5)
 
+        self.sort_state: dict[tuple[int, str], bool] = {}
+        self.task_sort_col = "due_at"
+        self.task_sort_desc = False
+
         init_db()
         self.settings = self._load_settings()
 
@@ -246,17 +250,13 @@ class LedgerDesktopApp:
         ttk.Button(tctrl, text="완료", command=self.mark_selected_task_done).pack(side="left", padx=4)
         ttk.Button(tctrl, text="관련 열기", command=self.open_selected_task_related).pack(side="left", padx=4)
         ttk.Button(tctrl, text="새로고침", command=self.refresh_tasks).pack(side="left", padx=4)
-        ttk.Label(tctrl, text="정렬").pack(side="left", padx=(12, 4))
-        self.task_sort_var = tk.StringVar(value="날짜순")
-        sort_cb = ttk.Combobox(tctrl, textvariable=self.task_sort_var, values=["날짜순", "물건순"], state="readonly", width=10)
-        sort_cb.pack(side="left", padx=2)
-        sort_cb.bind("<<ComboboxSelected>>", lambda _e: self.refresh_tasks())
 
         tcols = ("id", "due_at", "title", "entity", "status")
         self.tasks_tree = ttk.Treeview(task_frame, columns=tcols, show="headings", height=18)
-        twidths = {"id": 55, "due_at": 160, "title": 430, "entity": 320, "status": 90}
+        twidths = {"id": 55, "due_at": 170, "title": 430, "entity": 340, "status": 100}
+        tlabels = {"id": "ID", "due_at": "일정일시", "title": "할 일", "entity": "고객/물건", "status": "상태"}
         for c in tcols:
-            self.tasks_tree.heading(c, text=c)
+            self.tasks_tree.heading(c, text=tlabels.get(c, c), command=lambda col=c: self._sort_tasks_by(col))
             self.tasks_tree.column(c, width=twidths.get(c, 120))
         self.tasks_tree.pack(fill="both", expand=True, padx=6, pady=6)
         t_x = ttk.Scrollbar(task_frame, orient="horizontal", command=self.tasks_tree.xview)
@@ -323,6 +323,38 @@ class LedgerDesktopApp:
                 ),
             )
 
+    def _sort_tasks_by(self, col: str):
+        if col not in {"id", "due_at", "title", "entity", "status"}:
+            return
+        if self.task_sort_col == col:
+            self.task_sort_desc = not self.task_sort_desc
+        else:
+            self.task_sort_col = col
+            self.task_sort_desc = False
+        self.refresh_tasks()
+
+    def _sort_task_rows(self, rows: list[dict]) -> list[dict]:
+        col = getattr(self, "task_sort_col", "due_at")
+        desc = bool(getattr(self, "task_sort_desc", False))
+
+        def key_due(r: dict):
+            raw = str(r.get("due_at") or "")
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(raw, fmt)
+                except Exception:
+                    pass
+            return datetime.max if not desc else datetime.min
+
+        key_map = {
+            "id": lambda r: int(r.get("id") or 0),
+            "due_at": key_due,
+            "title": lambda r: str(r.get("title") or ""),
+            "entity": lambda r: self._task_entity_label(r),
+            "status": lambda r: str(r.get("status") or ""),
+        }
+        return sorted(rows, key=key_map.get(col, key_due), reverse=desc)
+
     def _task_entity_label(self, row: dict) -> str:
         et = str(row.get("entity_type") or "").strip()
         eid = row.get("entity_id")
@@ -357,10 +389,7 @@ class LedgerDesktopApp:
             pass
     
         rows = list_tasks(include_done=False, limit=400)
-        if getattr(self, "task_sort_var", tk.StringVar(value="날짜순")).get() == "물건순":
-            rows.sort(key=lambda r: (self._task_entity_label(r), str(r.get("due_at") or "")))
-        else:
-            rows.sort(key=lambda r: str(r.get("due_at") or ""))
+        rows = self._sort_task_rows(rows)
         self.dash_vars.get("tasks_open", tk.StringVar()).set(str(len(rows)))
 
         for i in self.tasks_tree.get_children():
@@ -939,8 +968,6 @@ class LedgerDesktopApp:
     def _build_property_ui(self):
         top = ttk.LabelFrame(self.property_tab, text="물건")
         top.pack(fill="x", padx=10, pady=8)
-
-        self.sort_state: dict[tuple[int, str], bool] = {}
 
         ttk.Button(top, text="+ 물건 등록", command=self.open_property_wizard).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="내보내기/동기화", command=self.export_sync).pack(side="left", padx=4, pady=6)
