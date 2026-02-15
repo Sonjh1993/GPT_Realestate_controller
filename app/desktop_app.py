@@ -102,7 +102,7 @@ class LedgerDesktopApp:
             self.root.state("zoomed")
         except Exception:
             pass
-        self._apply_ui_scale(2.0)
+        self._apply_ui_scale(1.5)
 
         init_db()
         self.settings = self._load_settings()
@@ -131,7 +131,7 @@ class LedgerDesktopApp:
         self.refresh_all()
         self.start_auto_sync_loop()
 
-    def _apply_ui_scale(self, scale: float = 2.0) -> None:
+    def _apply_ui_scale(self, scale: float = 1.5) -> None:
         try:
             self.root.tk.call("tk", "scaling", scale)
         except Exception:
@@ -148,15 +148,15 @@ class LedgerDesktopApp:
 
         # ttk 위젯 스타일 확대
         style = ttk.Style(self.root)
-        base_size = 20
+        base_size = 15
         style.configure("TLabel", font=("맑은 고딕", base_size))
-        style.configure("TButton", font=("맑은 고딕", base_size), padding=(12, 10))
-        style.configure("TEntry", font=("맑은 고딕", base_size), padding=(8, 8))
-        style.configure("TCombobox", font=("맑은 고딕", base_size), padding=(8, 8))
+        style.configure("TButton", font=("맑은 고딕", base_size), padding=(9, 7))
+        style.configure("TEntry", font=("맑은 고딕", base_size), padding=(6, 6))
+        style.configure("TCombobox", font=("맑은 고딕", base_size), padding=(6, 6))
         style.configure("TCheckbutton", font=("맑은 고딕", base_size))
         style.configure("TRadiobutton", font=("맑은 고딕", base_size))
-        style.configure("TNotebook.Tab", font=("맑은 고딕", base_size), padding=(18, 12))
-        style.configure("Treeview", font=("맑은 고딕", base_size), rowheight=44)
+        style.configure("TNotebook.Tab", font=("맑은 고딕", base_size), padding=(14, 9))
+        style.configure("Treeview", font=("맑은 고딕", base_size), rowheight=33)
         style.configure("Treeview.Heading", font=("맑은 고딕", base_size, "bold"))
         style.configure("TLabelframe.Label", font=("맑은 고딕", base_size, "bold"))
 
