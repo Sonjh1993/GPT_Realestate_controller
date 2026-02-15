@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .matching import match_properties
 from .proposal import build_kakao_message, generate_proposal_pdf
@@ -97,6 +97,7 @@ class LedgerDesktopApp:
         self.root = root
         self.root.title("엄마 부동산 장부 (오프라인 우선)")
         self.root.geometry("1520x930")
+        self._apply_ui_scale(2.0)
 
         init_db()
         self.settings = self._load_settings()
@@ -124,6 +125,35 @@ class LedgerDesktopApp:
 
         self.refresh_all()
         self.start_auto_sync_loop()
+
+    def _apply_ui_scale(self, scale: float = 2.0) -> None:
+        try:
+            self.root.tk.call("tk", "scaling", scale)
+        except Exception:
+            pass
+
+        # 기본 Tk 폰트들을 2배 확장
+        for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont"):
+            try:
+                f = tkfont.nametofont(name)
+                size = abs(int(f.cget("size") or 10))
+                f.configure(size=max(10, int(size * scale)))
+            except Exception:
+                continue
+
+        # ttk 위젯 스타일 확대
+        style = ttk.Style(self.root)
+        base_size = 20
+        style.configure("TLabel", font=("맑은 고딕", base_size))
+        style.configure("TButton", font=("맑은 고딕", base_size), padding=(12, 10))
+        style.configure("TEntry", font=("맑은 고딕", base_size), padding=(8, 8))
+        style.configure("TCombobox", font=("맑은 고딕", base_size), padding=(8, 8))
+        style.configure("TCheckbutton", font=("맑은 고딕", base_size))
+        style.configure("TRadiobutton", font=("맑은 고딕", base_size))
+        style.configure("TNotebook.Tab", font=("맑은 고딕", base_size), padding=(18, 12))
+        style.configure("Treeview", font=("맑은 고딕", base_size), rowheight=44)
+        style.configure("Treeview.Heading", font=("맑은 고딕", base_size, "bold"))
+        style.configure("TLabelframe.Label", font=("맑은 고딕", base_size, "bold"))
 
     # -----------------
     # Settings
