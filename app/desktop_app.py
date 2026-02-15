@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import shutil
 import webbrowser
 from dataclasses import dataclass
@@ -160,6 +161,19 @@ class LedgerDesktopApp:
         style.configure("Treeview.Heading", font=("맑은 고딕", base_size, "bold"))
         style.configure("TLabelframe.Label", font=("맑은 고딕", base_size, "bold"))
 
+    def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
+        try:
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            w = min(width, max(900, sw - 80))
+            h = min(height, max(600, sh - 120))
+            x = max(0, (sw - w) // 2)
+            y = max(0, (sh - h) // 2)
+            win.geometry(f"{w}x{h}+{x}+{y}")
+            win.minsize(820, 560)
+        except Exception:
+            pass
+
     # -----------------
     # Settings
     # -----------------
@@ -232,14 +246,22 @@ class LedgerDesktopApp:
         ttk.Button(tctrl, text="완료", command=self.mark_selected_task_done).pack(side="left", padx=4)
         ttk.Button(tctrl, text="관련 열기", command=self.open_selected_task_related).pack(side="left", padx=4)
         ttk.Button(tctrl, text="새로고침", command=self.refresh_tasks).pack(side="left", padx=4)
+        ttk.Label(tctrl, text="정렬").pack(side="left", padx=(12, 4))
+        self.task_sort_var = tk.StringVar(value="날짜순")
+        sort_cb = ttk.Combobox(tctrl, textvariable=self.task_sort_var, values=["날짜순", "물건순"], state="readonly", width=10)
+        sort_cb.pack(side="left", padx=2)
+        sort_cb.bind("<<ComboboxSelected>>", lambda _e: self.refresh_tasks())
 
         tcols = ("id", "due_at", "title", "entity", "status")
         self.tasks_tree = ttk.Treeview(task_frame, columns=tcols, show="headings", height=18)
-        twidths = {"id": 55, "due_at": 140, "title": 520, "entity": 120, "status": 80}
+        twidths = {"id": 55, "due_at": 160, "title": 430, "entity": 320, "status": 90}
         for c in tcols:
             self.tasks_tree.heading(c, text=c)
             self.tasks_tree.column(c, width=twidths.get(c, 120))
         self.tasks_tree.pack(fill="both", expand=True, padx=6, pady=6)
+        t_x = ttk.Scrollbar(task_frame, orient="horizontal", command=self.tasks_tree.xview)
+        self.tasks_tree.configure(xscrollcommand=t_x.set)
+        t_x.pack(fill="x", padx=6, pady=(0,6))
         self.tasks_tree.bind("<Double-1>", self._on_double_click_task)
 
         # ---- Upcoming viewings
@@ -301,6 +323,32 @@ class LedgerDesktopApp:
                 ),
             )
 
+    def _task_entity_label(self, row: dict) -> str:
+        et = str(row.get("entity_type") or "").strip()
+        eid = row.get("entity_id")
+        if not et or eid is None:
+            return ""
+        try:
+            eid_i = int(eid)
+        except Exception:
+            return f"{et}#{eid}"
+        if et == "PROPERTY":
+            p = get_property(eid_i)
+            if p:
+                return f"{p.get('complex_name') or ''} {p.get('address_detail') or ''}".strip() or f"물건#{eid_i}"
+        if et == "CUSTOMER":
+            c = get_customer(eid_i)
+            if c:
+                return f"고객 {c.get('customer_name') or eid_i}".strip()
+        if et == "VIEWING":
+            v = get_viewing(eid_i)
+            if v and v.get("property_id"):
+                p = get_property(int(v.get("property_id")))
+                if p:
+                    return f"일정 {p.get('complex_name') or ''} {p.get('address_detail') or ''}".strip()
+            return f"일정#{eid_i}"
+        return f"{et}#{eid_i}"
+
     def refresh_tasks(self):
         # 자동 태스크 최신화
         try:
@@ -309,18 +357,18 @@ class LedgerDesktopApp:
             pass
     
         rows = list_tasks(include_done=False, limit=400)
+        if getattr(self, "task_sort_var", tk.StringVar(value="날짜순")).get() == "물건순":
+            rows.sort(key=lambda r: (self._task_entity_label(r), str(r.get("due_at") or "")))
+        else:
+            rows.sort(key=lambda r: str(r.get("due_at") or ""))
         self.dash_vars.get("tasks_open", tk.StringVar()).set(str(len(rows)))
-    
+
         for i in self.tasks_tree.get_children():
             self.tasks_tree.delete(i)
-    
+
         for r in rows:
-            entity = ""
-            et = str(r.get("entity_type") or "").strip()
-            eid = r.get("entity_id")
-            if et and eid is not None:
-                entity = f"{et}#{eid}"
-    
+            entity = self._task_entity_label(r)
+
             self.tasks_tree.insert(
                 "",
                 "end",
@@ -364,7 +412,7 @@ class LedgerDesktopApp:
 
         win = tk.Toplevel(self.root)
         win.title("다음 할 일 추천")
-        win.geometry("500x300")
+        self._fit_toplevel(win, 620, 420)
 
         create_next = tk.BooleanVar(value=True)
         next_type = tk.StringVar(value=options[0] if options else "기타")
@@ -376,6 +424,20 @@ class LedgerDesktopApp:
         d = tk.IntVar(value=now.day + 1 if now.day < 28 else now.day)
         hh = tk.IntVar(value=10)
         mm = tk.IntVar(value=0)
+
+        selected_customer = tk.StringVar(value="")
+        selected_property = tk.StringVar(value="")
+
+        # 기존 컨텍스트 자동 채움
+        et = str(task_row.get("entity_type") or "")
+        eid = task_row.get("entity_id")
+        mobj = re.search(r"고객\s*(\d+)", title)
+        if mobj:
+            selected_customer.set(mobj.group(1))
+        if et == "CUSTOMER" and eid is not None:
+            selected_customer.set(str(eid))
+        if et == "PROPERTY" and eid is not None:
+            selected_property.set(str(eid))
 
         frm = ttk.Frame(win)
         frm.pack(fill="both", expand=True, padx=12, pady=12)
@@ -397,10 +459,59 @@ class LedgerDesktopApp:
         ttk.Spinbox(dt, from_=0, to=23, textvariable=hh, width=4).pack(side="left", padx=2)
         ttk.Spinbox(dt, from_=0, to=59, increment=5, textvariable=mm, width=4).pack(side="left", padx=2)
 
-        ttk.Label(frm, text="메모").grid(row=4, column=0, sticky="e", padx=6, pady=6)
-        ttk.Entry(frm, textvariable=note_var, width=34).grid(row=4, column=1, sticky="w", padx=6, pady=6)
+        # 매칭(고객+물건) 선택 영역
+        ttk.Label(frm, text="고객ID").grid(row=4, column=0, sticky="e", padx=6, pady=6)
+        cwrap = ttk.Frame(frm)
+        cwrap.grid(row=4, column=1, sticky="w", padx=6, pady=6)
+        ttk.Entry(cwrap, textvariable=selected_customer, width=12).pack(side="left")
 
-        ttk.Label(frm, text="완료되었습니다. 다음 액션을 추천합니다.", foreground="#8b4513").grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=8)
+        def pick_customer():
+            rows = [c for c in list_customers(include_deleted=False) if not c.get("hidden")]
+            pop = tk.Toplevel(win)
+            pop.title("고객 선택")
+            tree = ttk.Treeview(pop, columns=("id", "name", "phone"), show="headings", height=12)
+            for c in ("id", "name", "phone"):
+                tree.heading(c, text=c)
+            tree.pack(fill="both", expand=True, padx=8, pady=8)
+            for r in rows:
+                tree.insert("", "end", values=(r.get("id"), r.get("customer_name"), r.get("phone")))
+            def done():
+                sel = tree.selection()
+                if sel:
+                    selected_customer.set(str(tree.item(sel[0], "values")[0]))
+                pop.destroy()
+            ttk.Button(pop, text="선택", command=done).pack(pady=6)
+
+        ttk.Button(cwrap, text="고객선택", command=pick_customer).pack(side="left", padx=4)
+
+        ttk.Label(frm, text="물건ID").grid(row=5, column=0, sticky="e", padx=6, pady=6)
+        pwrap = ttk.Frame(frm)
+        pwrap.grid(row=5, column=1, sticky="w", padx=6, pady=6)
+        ttk.Entry(pwrap, textvariable=selected_property, width=12).pack(side="left")
+
+        def pick_property():
+            rows = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
+            pop = tk.Toplevel(win)
+            pop.title("물건 선택")
+            tree = ttk.Treeview(pop, columns=("id", "complex", "addr"), show="headings", height=12)
+            for c in ("id", "complex", "addr"):
+                tree.heading(c, text=c)
+            tree.pack(fill="both", expand=True, padx=8, pady=8)
+            for r in rows:
+                tree.insert("", "end", values=(r.get("id"), r.get("complex_name"), r.get("address_detail")))
+            def done():
+                sel = tree.selection()
+                if sel:
+                    selected_property.set(str(tree.item(sel[0], "values")[0]))
+                pop.destroy()
+            ttk.Button(pop, text="선택", command=done).pack(pady=6)
+
+        ttk.Button(pwrap, text="물건선택", command=pick_property).pack(side="left", padx=4)
+
+        ttk.Label(frm, text="메모").grid(row=6, column=0, sticky="e", padx=6, pady=6)
+        ttk.Entry(frm, textvariable=note_var, width=34).grid(row=6, column=1, sticky="w", padx=6, pady=6)
+
+        ttk.Label(frm, text="완료되었습니다. 다음 액션을 추천합니다.", foreground="#8b4513").grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=8)
 
         def confirm():
             if not create_next.get():
@@ -416,12 +527,28 @@ class LedgerDesktopApp:
             if mapped_title == "종료":
                 win.destroy()
                 return
+
+            entity_type = task_row.get("entity_type")
+            entity_id = task_row.get("entity_id")
+            title_to_save = mapped_title
+
+            if mapped_title == "약속 어레인지":
+                if not selected_customer.get().strip() or not selected_property.get().strip():
+                    messagebox.showwarning("확인", "약속 어레인지는 고객/물건을 모두 선택해주세요.")
+                    return
+                entity_type = "PROPERTY"
+                entity_id = int(selected_property.get())
+                title_to_save = f"약속 어레인지 (고객 {selected_customer.get().strip()})"
+            elif mapped_title in ("광고 등록", "후속(서류/정산/보관)") and selected_property.get().strip():
+                entity_type = "PROPERTY"
+                entity_id = int(selected_property.get())
+
             try:
                 add_task(
-                    title=mapped_title,
+                    title=title_to_save,
                     due_at=due_at,
-                    entity_type=task_row.get("entity_type"),
-                    entity_id=task_row.get("entity_id"),
+                    entity_type=entity_type,
+                    entity_id=entity_id,
                     note=note_var.get().strip(),
                     kind="MANUAL",
                     status="OPEN",
@@ -434,7 +561,7 @@ class LedgerDesktopApp:
             win.destroy()
 
         btns = ttk.Frame(frm)
-        btns.grid(row=6, column=1, sticky="w", padx=6, pady=10)
+        btns.grid(row=8, column=1, sticky="w", padx=6, pady=10)
         ttk.Button(btns, text="확인", command=confirm).pack(side="left", padx=4)
         ttk.Button(btns, text="닫기", command=win.destroy).pack(side="left", padx=4)
 
@@ -516,7 +643,7 @@ class LedgerDesktopApp:
 
         win = tk.Toplevel(self.root)
         win.title(f"할 일 상세 - #{task_id}")
-        win.geometry("560x360")
+        self._fit_toplevel(win, 560, 360)
 
         frm = ttk.Frame(win)
         frm.pack(fill="both", expand=True, padx=12, pady=12)
@@ -556,7 +683,7 @@ class LedgerDesktopApp:
     def open_add_task_window(self, *, default_entity_type: str = "", default_entity_id: int | None = None):
         win = tk.Toplevel(self.root)
         win.title("새 할 일 추가")
-        win.geometry("700x520")
+        self._fit_toplevel(win, 700, 520)
 
         selected_properties: list[int] = []
         selected_customer: int | None = None
@@ -862,6 +989,9 @@ class LedgerDesktopApp:
                 if c == "id":
                     tree.column(c, minwidth=0, width=0, stretch=False)
             tree.pack(fill="both", expand=True)
+            xsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+            tree.configure(xscrollcommand=xsb.set)
+            xsb.pack(fill="x")
             tree.bind("<Double-1>", lambda e, t=tab_name: self._on_double_click_property(e, t))
             self.prop_trees[tab_name] = tree
 
@@ -940,7 +1070,7 @@ class LedgerDesktopApp:
     def open_property_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("물건 등록")
-        win.geometry("760x620")
+        self._fit_toplevel(win, 760, 620)
 
         vars_ = {
             "tab": tk.StringVar(value=PROPERTY_TABS[0]),
@@ -1371,6 +1501,9 @@ class LedgerDesktopApp:
             if c == "id":
                 self.customer_tree.column(c, minwidth=0, width=0, stretch=False)
         self.customer_tree.pack(fill="both", expand=True, padx=10, pady=8)
+        c_x = ttk.Scrollbar(self.customer_tab, orient="horizontal", command=self.customer_tree.xview)
+        self.customer_tree.configure(xscrollcommand=c_x.set)
+        c_x.pack(fill="x", padx=10, pady=(0,6))
         self.customer_tree.bind("<Double-1>", self._on_double_click_customer)
 
         btns = ttk.Frame(self.customer_tab)
@@ -1382,7 +1515,7 @@ class LedgerDesktopApp:
     def open_customer_wizard(self):
         win = tk.Toplevel(self.root)
         win.title("고객 등록")
-        win.geometry("700x620")
+        self._fit_toplevel(win, 700, 620)
 
         vars_ = {
             "customer_name": tk.StringVar(),
@@ -1909,7 +2042,7 @@ class LedgerDesktopApp:
 
         win = tk.Toplevel(self.root)
         win.title(f"물건 상세 - ID {property_id}")
-        win.geometry("1100x760")
+        self._fit_toplevel(win, 1100, 760)
 
         nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
@@ -2225,7 +2358,7 @@ class LedgerDesktopApp:
 
         win = tk.Toplevel(self.root)
         win.title(f"고객 상세 - ID {customer_id}")
-        win.geometry("980x560")
+        self._fit_toplevel(win, 980, 560)
 
         vars_ = {k: tk.StringVar(value=str(row.get(k, "") or "")) for k in row.keys()}
         # boolean hidden not edited here
