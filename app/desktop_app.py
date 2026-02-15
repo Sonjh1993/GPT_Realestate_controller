@@ -169,12 +169,15 @@ class LedgerDesktopApp:
         try:
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            w = min(width, max(900, sw - 80))
-            h = min(height, max(600, sh - 120))
+            max_w = max(520, sw - 20)
+            max_h = max(460, sh - 40)
+            w = min(max(width, int(sw * 0.65)), max_w)
+            h = min(max(height, int(sh * 0.82)), max_h)
             x = max(0, (sw - w) // 2)
-            y = max(0, (sh - h) // 2)
+            y = max(8, (sh - h) // 5)
             win.geometry(f"{w}x{h}+{x}+{y}")
-            win.minsize(820, 560)
+            win.minsize(min(760, max_w), min(520, max_h))
+            win.resizable(True, True)
         except Exception:
             pass
 
@@ -498,6 +501,7 @@ class LedgerDesktopApp:
             rows = [c for c in list_customers(include_deleted=False) if not c.get("hidden")]
             pop = tk.Toplevel(win)
             pop.title("고객 선택")
+            self._fit_toplevel(pop, 760, 560)
             tree = ttk.Treeview(pop, columns=("id", "name", "phone"), show="headings", height=12)
             for c in ("id", "name", "phone"):
                 tree.heading(c, text=c)
@@ -522,6 +526,7 @@ class LedgerDesktopApp:
             rows = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
             pop = tk.Toplevel(win)
             pop.title("물건 선택")
+            self._fit_toplevel(pop, 860, 620)
             tree = ttk.Treeview(pop, columns=("id", "complex", "addr"), show="headings", height=12)
             for c in ("id", "complex", "addr"):
                 tree.heading(c, text=c)
@@ -784,7 +789,7 @@ class LedgerDesktopApp:
             if not rows:
                 popup = tk.Toplevel(win)
                 popup.title("물건 선택")
-                popup.geometry("420x150")
+                self._fit_toplevel(popup, 520, 220)
                 ttk.Label(popup, text="등록된 물건이 없습니다. 먼저 물건 등록을 해주세요.").pack(padx=12, pady=12, anchor="w")
                 btns = ttk.Frame(popup)
                 btns.pack(pady=8)
@@ -794,7 +799,7 @@ class LedgerDesktopApp:
 
             popup = tk.Toplevel(win)
             popup.title("물건 선택")
-            popup.geometry("620x420")
+            self._fit_toplevel(popup, 820, 620)
             search_var = tk.StringVar(value="")
             selected_count_var = tk.StringVar(value=f"선택 {len(selected_properties)}건")
             picked_ids = set(selected_properties)
@@ -1473,6 +1478,7 @@ class LedgerDesktopApp:
     def open_hidden_properties_window(self):
         win = tk.Toplevel(self.root)
         win.title("물건 숨김함")
+        self._fit_toplevel(win, 760, 560)
         tree = ttk.Treeview(win, columns=("id", "tab", "address"), show="headings", height=14)
         for c in ("id", "tab", "address"):
             tree.heading(c, text=c)
@@ -1528,7 +1534,7 @@ class LedgerDesktopApp:
     def _open_tab_multi_select(self, parent: tk.Misc, current_text: str) -> str | None:
         popup = tk.Toplevel(parent)
         popup.title("희망 유형 선택")
-        popup.geometry("360x260")
+        self._fit_toplevel(popup, 420, 320)
 
         current = set(self._parse_preferred_tabs(current_text))
         vars_map = {tab: tk.BooleanVar(value=(tab in current)) for tab in PROPERTY_TABS}
@@ -1882,6 +1888,7 @@ class LedgerDesktopApp:
     def open_hidden_customers_window(self):
         win = tk.Toplevel(self.root)
         win.title("고객 숨김함")
+        self._fit_toplevel(win, 760, 560)
         tree = ttk.Treeview(win, columns=("id", "name", "phone"), show="headings", height=14)
         for c in ("id", "name", "phone"):
             tree.heading(c, text=c)
@@ -2480,7 +2487,7 @@ class LedgerDesktopApp:
     def _open_add_viewing_window(self, property_id: int, on_saved):
         win = tk.Toplevel(self.root)
         win.title("일정 추가")
-        win.geometry("520x300")
+        self._fit_toplevel(win, 620, 380)
 
         vars_ = {
             "start": tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M")),
@@ -2633,7 +2640,7 @@ class LedgerDesktopApp:
 
         win = tk.Toplevel(self.root)
         win.title(title)
-        win.geometry("520x360")
+        self._fit_toplevel(win, 620, 460)
 
         tree = ttk.Treeview(win, columns=("type", "id", "name"), show="headings")
         tree.heading("type", text="유형")
