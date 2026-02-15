@@ -28,6 +28,10 @@ DB_PATH = BASE_DIR / "ledger.db"
 # UI 탭(요구사항 그대로)
 PROPERTY_TABS = ["봉담자이 프라이드시티", "힐스테이트봉담프라이드시티", "상가", "단독주택"]
 
+PROPERTY_STATUS_VALUES = ["신규등록", "검수완료(사진등록)", "계약완료"]
+CUSTOMER_STATUS_VALUES = ["문의", "임장예약", "계약진행", "계약완료", "입주", "대기"]
+PHOTO_TAG_VALUES = ["거실", "현관", "안방", "작은방", "발코니", "드레스룸", "화장실", "주방", "뷰", "기타"]
+TASK_TYPE_VALUES = ["상담 예약", "집/상가 방문", "약속 어레인지", "계약 / 잔금 일정", "광고 등록", "후속(서류/정산/보관)", "기타"]
 
 # 탭 -> 고정 단지명(아파트단지는 고정)
 TAB_COMPLEX_NAME = {
@@ -125,7 +129,7 @@ def init_db() -> None:
             floor_preference TEXT,
             has_pet TEXT,
             extra_needs TEXT,
-            status TEXT DEFAULT '진행',
+            status TEXT DEFAULT '문의',
             hidden INTEGER DEFAULT 0,
             deleted INTEGER DEFAULT 0,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -235,7 +239,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
             "size_value": "TEXT",
             "condition_preference": "TEXT",
             "has_pet": "TEXT",
-            "status": "TEXT DEFAULT '진행'",
+            "status": "TEXT DEFAULT '문의'",
             "deleted": "INTEGER DEFAULT 0",
             "updated_at": "TEXT DEFAULT CURRENT_TIMESTAMP",
         },
@@ -245,6 +249,16 @@ CREATE TABLE IF NOT EXISTS audit_log (
     for old_name, new_name in LEGACY_TAB_MAP.items():
         conn.execute("UPDATE properties SET tab=? WHERE tab=?", (new_name, old_name))
         conn.execute("UPDATE customer_requests SET preferred_tab=? WHERE preferred_tab=?", (new_name, old_name))
+
+    # Status migration
+    conn.execute("UPDATE properties SET status='계약완료' WHERE status='거래완료'")
+    conn.execute("UPDATE properties SET status='신규등록' WHERE status='사진필요'")
+
+    conn.execute("UPDATE customer_requests SET status='문의' WHERE status='진행'")
+    conn.execute("UPDATE customer_requests SET status='대기' WHERE status='보류'")
+    conn.execute("UPDATE customer_requests SET status='계약완료' WHERE status='완료'")
+    conn.execute("UPDATE customer_requests SET status='대기' WHERE status='대기'")
+    conn.execute("UPDATE customer_requests SET status='문의' WHERE status IS NULL OR TRIM(status)=''")
 
     conn.commit()
     conn.close()
@@ -509,7 +523,7 @@ def add_customer(data: dict[str, Any]) -> int:
         "floor_preference": data.get("floor_preference", ""),
         "has_pet": data.get("has_pet", ""),
         "extra_needs": data.get("extra_needs", ""),
-        "status": data.get("status", "진행"),
+        "status": data.get("status", "문의"),
         "hidden": 1 if data.get("hidden") else 0,
         "deleted": 0,
         "created_at": _now_ts(),
@@ -573,7 +587,7 @@ def update_customer(customer_id: int, data: dict[str, Any]) -> None:
             data.get("floor_preference", before.get("floor_preference", "")),
             data.get("has_pet", before.get("has_pet", "")),
             data.get("extra_needs", before.get("extra_needs", "")),
-            data.get("status", before.get("status", "진행")),
+            data.get("status", before.get("status", "문의")),
             _now_ts(),
             customer_id,
         ),

@@ -17,8 +17,12 @@ from .tasks_engine import reconcile_auto_tasks
 from .sheet_sync import SyncSettings, upload_visible_data
 from . import unit_master
 from .storage import (
+    CUSTOMER_STATUS_VALUES,
+    PHOTO_TAG_VALUES,
+    PROPERTY_STATUS_VALUES,
     PROPERTY_TABS,
     TAB_COMPLEX_NAME,
+    TASK_TYPE_VALUES,
     add_customer,
     add_photo,
     add_property,
@@ -49,9 +53,6 @@ from .storage import (
     mark_task_done,
     get_task,
  )
-
-
-PHOTO_TAG_OPTIONS = ["거실", "현관", "안방", "작은방", "발코니", "드레스룸", "화장실", "주방", "뷰", "기타"]
 
 
 def _open_file(path: Path) -> None:
@@ -96,7 +97,11 @@ class LedgerDesktopApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("엄마 부동산 장부 (오프라인 우선)")
-        self.root.geometry("1520x930")
+        self.root.geometry("1920x1080")
+        try:
+            self.root.state("zoomed")
+        except Exception:
+            pass
         self._apply_ui_scale(2.0)
 
         init_db()
@@ -341,28 +346,7 @@ class LedgerDesktopApp:
         tid = self._selected_task_id()
         if tid is None:
             return
-
-        before = None
-        try:
-            tasks = list_tasks(include_done=True, limit=800)
-            for t in tasks:
-                if int(t.get("id") or 0) == tid:
-                    before = t
-                    break
-        except Exception:
-            before = None
-
-        try:
-            mark_task_done(tid)
-        except Exception as exc:
-            messagebox.showerror("오류", f"완료 처리 실패: {exc}")
-            return
-
-        self.refresh_tasks()
-        self.refresh_dashboard()
-
-        if before:
-            self.open_task_handoff_dialog(before)
+        self.complete_task_and_handoff(tid)
 
     def _task_handoff_options(self, title: str) -> list[str]:
         t = (title or "").strip()
@@ -490,7 +474,84 @@ class LedgerDesktopApp:
             messagebox.showerror("오류", f"관련 열기 실패: {exc}")
 
     def _on_double_click_task(self, _event):
-        self.open_selected_task_related()
+        tid = self._selected_task_id()
+        if tid is None:
+            return
+        self.open_task_detail(tid)
+
+    def complete_task_and_handoff(self, task_id: int, *, parent_win: tk.Toplevel | None = None):
+        row = None
+        try:
+            tasks = list_tasks(include_done=True, limit=800)
+            for t in tasks:
+                if int(t.get("id") or 0) == int(task_id):
+                    row = t
+                    break
+        except Exception:
+            row = None
+
+        try:
+            mark_task_done(task_id)
+        except Exception as exc:
+            messagebox.showerror("오류", f"완료 처리 실패: {exc}")
+            return
+
+        self.refresh_tasks()
+        self.refresh_dashboard()
+        if parent_win is not None:
+            try:
+                parent_win.destroy()
+            except Exception:
+                pass
+
+        messagebox.showinfo("완료", "할 일을 완료했습니다.")
+        if row:
+            self.open_task_handoff_dialog(row)
+
+    def open_task_detail(self, task_id: int):
+        row = get_task(task_id)
+        if not row:
+            messagebox.showwarning("안내", "할 일 정보를 찾을 수 없습니다.")
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(f"할 일 상세 - #{task_id}")
+        win.geometry("560x360")
+
+        frm = ttk.Frame(win)
+        frm.pack(fill="both", expand=True, padx=12, pady=12)
+
+        ttk.Label(frm, text="제목").grid(row=0, column=0, sticky="e", padx=6, pady=6)
+        ttk.Label(frm, text=str(row.get("title") or "")).grid(row=0, column=1, sticky="w", padx=6, pady=6)
+        ttk.Label(frm, text="일시").grid(row=1, column=0, sticky="e", padx=6, pady=6)
+        ttk.Label(frm, text=str(row.get("due_at") or "")).grid(row=1, column=1, sticky="w", padx=6, pady=6)
+        ttk.Label(frm, text="상태").grid(row=2, column=0, sticky="e", padx=6, pady=6)
+        ttk.Label(frm, text=str(row.get("status") or "")).grid(row=2, column=1, sticky="w", padx=6, pady=6)
+        ttk.Label(frm, text="메모").grid(row=3, column=0, sticky="ne", padx=6, pady=6)
+        ttk.Label(frm, text=str(row.get("note") or "")).grid(row=3, column=1, sticky="w", padx=6, pady=6)
+
+        def open_related_from_detail():
+            et = str(row.get("entity_type") or "").strip()
+            eid = row.get("entity_id")
+            if et == "PROPERTY" and eid is not None:
+                self.open_property_detail(int(eid))
+            elif et == "CUSTOMER" and eid is not None:
+                self.open_customer_detail(int(eid))
+            elif et == "VIEWING" and eid is not None:
+                v = get_viewing(int(eid))
+                if v and v.get("property_id"):
+                    self.open_property_detail(int(v.get("property_id")))
+            else:
+                messagebox.showinfo("안내", "연결된 대상이 없는 할 일입니다.")
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=4, column=1, sticky="w", padx=6, pady=12)
+        ttk.Button(btns, text="관련 열기", command=open_related_from_detail).pack(side="left", padx=4)
+        if str(row.get("status") or "") == "OPEN":
+            ttk.Button(btns, text="완료", command=lambda: self.complete_task_and_handoff(task_id, parent_win=win)).pack(side="left", padx=4)
+        else:
+            ttk.Label(btns, text="이미 완료된 할 일입니다.", foreground="#8b4513").pack(side="left", padx=4)
+        ttk.Button(btns, text="닫기", command=win.destroy).pack(side="left", padx=4)
 
     def open_add_task_window(self, *, default_entity_type: str = "", default_entity_id: int | None = None):
         win = tk.Toplevel(self.root)
@@ -523,7 +584,7 @@ class LedgerDesktopApp:
             textvariable=task_type_var,
             state="readonly",
             width=36,
-            values=["상담 예약", "집/상가 방문", "약속 어레인지", "계약 / 잔금 일정", "기타"],
+            values=TASK_TYPE_VALUES,
         )
         task_type_cb.grid(row=0, column=1, sticky="w", padx=6, pady=6)
 
@@ -648,7 +709,7 @@ class LedgerDesktopApp:
 
         def choose_customer():
             nonlocal selected_customer
-            rows = [c for c in list_customers(include_deleted=False) if not c.get("hidden") and c.get("status") in ("진행", "대기", "")]
+            rows = [c for c in list_customers(include_deleted=False) if not c.get("hidden") and c.get("status") in ("문의", "임장예약", "계약진행", "대기", "")]
             popup = tk.Toplevel(win)
             popup.title("고객 선택")
             search_var = tk.StringVar(value="")
@@ -716,6 +777,9 @@ class LedgerDesktopApp:
                 return
             if title == "계약 / 잔금 일정" and not selected_properties:
                 messagebox.showwarning("확인", "계약/잔금 일정은 물건 1개 이상이 필요합니다.")
+                return
+            if title in ("광고 등록", "후속(서류/정산/보관)") and not selected_properties:
+                messagebox.showwarning("확인", f"{title} 할 일은 물건 1개 이상이 필요합니다.")
                 return
             if title == "약속 어레인지":
                 if not selected_customer or not selected_properties:
@@ -1046,15 +1110,28 @@ class LedgerDesktopApp:
         ttk.Label(s3, text="향").grid(row=2,column=0,padx=6,pady=6,sticky="e")
         ttk.Combobox(s3, textvariable=vars_["orientation"], values=["남향","동향","서향","북향","기타"], state="readonly").grid(row=2,column=1,padx=6,pady=6,sticky="w")
         ttk.Label(s3, text="상태").grid(row=3,column=0,padx=6,pady=6,sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["status"], values=["신규등록","사진필요","거래완료"], state="readonly").grid(row=3,column=1,padx=6,pady=6,sticky="w")
+        ttk.Combobox(s3, textvariable=vars_["status"], values=PROPERTY_STATUS_VALUES, state="readonly").grid(row=3,column=1,padx=6,pady=6,sticky="w")
         ttk.Checkbutton(s3, text="수리 필요", variable=vars_["repair_needed"]).grid(row=4,column=0,padx=6,pady=6,sticky="w")
         ttk.Label(s3, text="수리 항목(쉼표구분)").grid(row=5,column=0,padx=6,pady=6,sticky="e")
         ttk.Entry(s3, textvariable=vars_["repair_items"], width=36).grid(row=5,column=1,padx=6,pady=6,sticky="w")
 
-        fields=[("집주인명","owner_name"),("집주인 전화*","owner_phone"),("집주인 상황","owner_status"),("세입자 전화","tenant_phone"),("입주 가능일","move_available_date")]
+        fields=[("집주인명","owner_name"),("집주인 전화*","owner_phone"),("집주인 상황","owner_status"),("세입자 전화","tenant_phone")]
         for i,(label,k) in enumerate(fields):
             ttk.Label(s4,text=label).grid(row=i,column=0,padx=6,pady=6,sticky='e')
             ttk.Entry(s4,textvariable=vars_[k],width=32).grid(row=i,column=1,padx=6,pady=6,sticky='w')
+
+        move_mode = tk.StringVar(value="즉시")
+        move_y = tk.IntVar(value=datetime.now().year)
+        move_m = tk.IntVar(value=datetime.now().month)
+        move_d = tk.IntVar(value=datetime.now().day)
+        ttk.Label(s4, text="입주 가능일").grid(row=4,column=0,padx=6,pady=6,sticky='e')
+        move_wrap = ttk.Frame(s4)
+        move_wrap.grid(row=4,column=1,padx=6,pady=6,sticky='w')
+        ttk.Combobox(move_wrap, textvariable=move_mode, values=["즉시","협의","날짜선택"], state='readonly', width=10).pack(side='left')
+        ttk.Spinbox(move_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side='left', padx=2)
+        ttk.Spinbox(move_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side='left', padx=2)
+        ttk.Spinbox(move_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side='left', padx=2)
+
         ttk.Label(s4, text="거주형태").grid(row=5,column=0,padx=6,pady=6,sticky='e')
         ttk.Combobox(s4,textvariable=vars_["resident_type"],values=["주인거주","세입자거주"],state='readonly').grid(row=5,column=1,padx=6,pady=6,sticky='w')
         ttk.Label(s4, text="방문 협조").grid(row=6,column=0,padx=6,pady=6,sticky='e')
@@ -1075,6 +1152,11 @@ class LedgerDesktopApp:
             ho = vars_["ho"].get().strip()
 
             data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k,v in vars_.items()}
+            mode = move_mode.get().strip()
+            if mode == "날짜선택":
+                data["move_available_date"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}"
+            else:
+                data["move_available_date"] = mode
             data["tab"] = tab
             data["complex_name"] = tab
 
@@ -1277,7 +1359,7 @@ class LedgerDesktopApp:
             "floor_preference": tk.StringVar(value="상관없음"),
             "has_pet": tk.StringVar(value="없음"),
             "extra_needs": tk.StringVar(),
-            "status": tk.StringVar(value="진행"),
+            "status": tk.StringVar(value="문의"),
         }
 
         nb = ttk.Notebook(win)
@@ -1299,7 +1381,18 @@ class LedgerDesktopApp:
         ttk.Label(s1, text="거래유형").grid(row=3, column=0, padx=6, pady=8, sticky="e")
         ttk.Combobox(s1, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s1, text="입주 희망일").grid(row=4, column=0, padx=6, pady=8, sticky="e")
-        ttk.Entry(s1, textvariable=vars_["move_in_period"], width=32).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        move_wrap = ttk.Frame(s1)
+        move_wrap.grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        move_y = tk.IntVar(value=datetime.now().year)
+        move_m = tk.IntVar(value=datetime.now().month)
+        move_d = tk.IntVar(value=datetime.now().day)
+        ttk.Spinbox(move_wrap, from_=2020, to=2100, textvariable=move_y, width=6).pack(side="left")
+        ttk.Spinbox(move_wrap, from_=1, to=12, textvariable=move_m, width=4).pack(side="left", padx=2)
+        ttk.Spinbox(move_wrap, from_=1, to=31, textvariable=move_d, width=4).pack(side="left", padx=2)
+        ttk.Button(move_wrap, text="오늘", command=lambda: (move_y.set(datetime.now().year), move_m.set(datetime.now().month), move_d.set(datetime.now().day))).pack(side="left", padx=2)
+        ttk.Button(move_wrap, text="내일", command=lambda: (move_y.set((datetime.now()+timedelta(days=1)).year), move_m.set((datetime.now()+timedelta(days=1)).month), move_d.set((datetime.now()+timedelta(days=1)).day))).pack(side="left", padx=2)
+        ttk.Button(move_wrap, text="+7일", command=lambda: (move_y.set((datetime.now()+timedelta(days=7)).year), move_m.set((datetime.now()+timedelta(days=7)).month), move_d.set((datetime.now()+timedelta(days=7)).day))).pack(side="left", padx=2)
+
         ttk.Label(s1, text="희망 거래가").grid(row=5, column=0, padx=6, pady=8, sticky="e")
         budget_wrap = ttk.Frame(s1)
         budget_wrap.grid(row=5, column=1, padx=6, pady=8, sticky="w")
@@ -1328,7 +1421,7 @@ class LedgerDesktopApp:
 
         # 3단계 메모/상태
         ttk.Label(s3, text="상태").grid(row=0, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s3, textvariable=vars_["status"], values=["진행", "대기", "보류", "완료"], state="readonly", width=29).grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        ttk.Combobox(s3, textvariable=vars_["status"], values=CUSTOMER_STATUS_VALUES, state="readonly", width=29).grid(row=0, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s3, text="추가 요청사항").grid(row=1, column=0, padx=6, pady=8, sticky="ne")
         ttk.Entry(s3, textvariable=vars_["extra_needs"], width=48).grid(row=1, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s3, text="※ 고객명/전화번호를 먼저 입력하면 이후 일정/어레인지 연결이 쉬워집니다.", foreground="#555").grid(row=2, column=0, columnspan=2, padx=6, pady=8, sticky="w")
@@ -1340,6 +1433,7 @@ class LedgerDesktopApp:
                 return
 
             payload = {k: v.get().strip() for k, v in vars_.items()}
+            payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}"
             payload["budget"] = f"{payload.get('budget_eok', '0')}억 {payload.get('budget_che', '0')}천"
             if payload["size_unit"] == "㎡":
                 payload["preferred_area"] = payload["size_value"]
@@ -1371,7 +1465,7 @@ class LedgerDesktopApp:
             self.customer_tree.delete(i)
         q = self.customer_phone_query.get().strip() if hasattr(self, "customer_phone_query") else ""
         rows = list_customers(phone_query=q)
-        order = {"진행": 0, "대기": 1, "보류": 2, "완료": 3}
+        order = {"문의": 0, "임장예약": 1, "계약진행": 2, "계약완료": 3, "입주": 4, "대기": 5}
         rows.sort(key=lambda r: (order.get(str(r.get("status") or ""), 9), -int(r.get("id") or 0)))
         for row in rows:
             if row.get("hidden"):
@@ -1420,7 +1514,15 @@ class LedgerDesktopApp:
             return
         self.open_customer_detail(cid)
     
-    def _on_double_click_customer(self, _event):
+    def _on_double_click_customer(self, event):
+        item = self.customer_tree.identify_row(event.y)
+        if item:
+            try:
+                cid = int(self.customer_tree.item(item, "values")[0])
+                self.open_customer_detail(cid)
+                return
+            except Exception:
+                pass
         self.open_selected_customer_detail()
     
         # -----------------
@@ -1581,6 +1683,17 @@ class LedgerDesktopApp:
                 continue
         return ids
 
+    def _ranked_photos_for_property(self, property_id: int) -> list[dict[str, str]]:
+        priority = ["거실", "안방", "작은방", "화장실", "주방", "현관", "뷰", "기타"]
+        rank = {name: i for i, name in enumerate(priority)}
+        rows = [
+            {"file_path": str(r.get("file_path") or ""), "tag": str(r.get("tag") or "")}
+            for r in list_photos(property_id)
+            if r.get("file_path")
+        ]
+        rows.sort(key=lambda x: (rank.get(x.get("tag", ""), 99), x.get("tag", "")))
+        return rows
+
     def open_proposals_folder(self):
         self.settings = self._load_settings()
         out_dir = self.settings.sync_dir / "exports" / "proposals"
@@ -1599,17 +1712,14 @@ class LedgerDesktopApp:
             return
     
         props: list[dict] = []
-        photos_by_property: dict[int, list[str]] = {}
+        photos_by_property: dict[int, list[dict[str, str]]] = {}
     
         for pid in pids:
             row = get_property(pid)
             if not row:
                 continue
             props.append(row)
-            photos_by_property[pid] = [
-                {"file_path": r.get("file_path"), "tag": r.get("tag")}
-                for r in list_photos(pid) if r.get("file_path")
-            ]
+            photos_by_property[pid] = self._ranked_photos_for_property(pid)
     
         self.settings = self._load_settings()
         out_dir = self.settings.sync_dir / "exports" / "proposals"
@@ -1798,7 +1908,7 @@ class LedgerDesktopApp:
         add_row(0, 0, "탭", ttk.Entry(form, textvariable=vars_["tab"], width=24, state="readonly"))
         add_row(0, 2, "단지명", ttk.Entry(form, textvariable=vars_["complex_name"], width=36))
         add_row(0, 4, "상태", ttk.Combobox(form, textvariable=vars_["status"], width=18, state="readonly",
-                                             values=["신규등록", "사진필요", "거래완료"]))
+                                             values=PROPERTY_STATUS_VALUES))
 
         # row 1
         add_row(1, 0, "동/호(상세)", ttk.Entry(form, textvariable=vars_["address_detail"], width=24))
@@ -1836,8 +1946,16 @@ class LedgerDesktopApp:
             data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k, v in vars_.items()}
             # area/pyeong numeric as strings ok; storage converts
             update_property(property_id, data)
-            messagebox.showinfo("완료", "저장되었습니다.")
             self.refresh_all()
+
+            linked_tasks = list_tasks(include_done=False, entity_type="PROPERTY", entity_id=property_id)
+            linked_customers = sorted({int(v.get("customer_id")) for v in list_viewings(property_id=property_id) if v.get("customer_id")})
+            msg = f"저장 완료. 연결된 할일 {len(linked_tasks)}개 / 연결된 고객 {len(linked_customers)}명"
+            if linked_tasks or linked_customers:
+                if messagebox.askyesno("완료", msg + "\n바로 열까요?"):
+                    self._open_related_navigation_popup(title="연결된 고객", customers=linked_customers)
+            else:
+                messagebox.showinfo("완료", "저장되었습니다.")
 
         def toggle_hide():
             toggle_property_hidden(property_id)
@@ -1873,12 +1991,13 @@ class LedgerDesktopApp:
             ph_tree.heading(c, text=c)
             ph_tree.column(c, width=w)
         ph_tree.pack(fill="both", expand=True)
+        ph_tree.bind("<Double-1>", lambda _e: open_photo())
 
         ph_controls = ttk.Frame(ph_box)
         ph_controls.pack(fill="x", pady=6)
-        ph_tag_var = tk.StringVar(value=PHOTO_TAG_OPTIONS[0])
+        ph_tag_var = tk.StringVar(value=PHOTO_TAG_VALUES[0])
         ttk.Label(ph_controls, text="사진 구분").pack(side="left", padx=4)
-        ttk.Combobox(ph_controls, textvariable=ph_tag_var, values=PHOTO_TAG_OPTIONS, state="readonly", width=14).pack(side="left", padx=4)
+        ttk.Combobox(ph_controls, textvariable=ph_tag_var, values=PHOTO_TAG_VALUES, state="readonly", width=14).pack(side="left", padx=4)
 
         def refresh_photos():
             for i in ph_tree.get_children():
@@ -1890,11 +2009,18 @@ class LedgerDesktopApp:
             src = filedialog.askopenfilename(title="사진 선택")
             if not src:
                 return
-            tag = ph_tag_var.get().strip() or "기타"
+            tag = ph_tag_var.get().strip()
+            if not tag:
+                messagebox.showwarning("확인", "사진 구분 태그를 선택해주세요.")
+                return
             dst = self._copy_photo_to_library(Path(src), property_id, tag=tag)
             add_photo(property_id, str(dst), tag=tag)
-            ph_tag_var.set(PHOTO_TAG_OPTIONS[0])
+            current = get_property(property_id)
+            if current and str(current.get("status") or "") == "신규등록":
+                update_property(property_id, {"status": "검수완료(사진등록)"})
+            ph_tag_var.set(PHOTO_TAG_VALUES[0])
             refresh_photos()
+            self.refresh_properties()
 
         def open_photo():
             sel = ph_tree.selection()
@@ -1985,7 +2111,7 @@ class LedgerDesktopApp:
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_tag = "".join(ch for ch in (tag or "기타") if ch.isalnum() or ch in "-_가-힣").strip() or "기타"
         ext = src.suffix.lower() or ".jpg"
-        dst = dst_dir / f"{property_id}_{safe_tag}_{ts}{ext}"
+        dst = dst_dir / f"PR_{property_id:06d}_{safe_tag}_{ts}{ext}"
         shutil.copy2(src, dst)
         return dst
     
@@ -2082,7 +2208,7 @@ class LedgerDesktopApp:
             if key == "preferred_tab":
                 w = ttk.Combobox(form, textvariable=vars_[key], values=PROPERTY_TABS, width=22, state="readonly")
             elif key == "status":
-                w = ttk.Combobox(form, textvariable=vars_[key], values=["진행", "대기", "보류", "완료"], width=22, state="readonly")
+                w = ttk.Combobox(form, textvariable=vars_[key], values=CUSTOMER_STATUS_VALUES, width=22, state="readonly")
             else:
                 w = ttk.Entry(form, textvariable=vars_[key], width=26)
             w.grid(row=i // 3, column=(i % 3) * 2 + 1, padx=6, pady=6, sticky="w")
@@ -2093,8 +2219,16 @@ class LedgerDesktopApp:
         def save_changes():
             data = {k: v.get() for k, v in vars_.items()}
             update_customer(customer_id, data)
-            messagebox.showinfo("완료", "저장되었습니다.")
             self.refresh_all()
+
+            linked_tasks = list_tasks(include_done=False, entity_type="CUSTOMER", entity_id=customer_id)
+            linked_props = sorted({int(v.get("property_id")) for v in list_viewings(customer_id=customer_id) if v.get("property_id")})
+            msg = f"저장 완료. 연결된 할일 {len(linked_tasks)}개 / 연결된 물건 {len(linked_props)}개"
+            if linked_tasks or linked_props:
+                if messagebox.askyesno("완료", msg + "\n바로 열까요?"):
+                    self._open_related_navigation_popup(title="연결된 물건", properties=linked_props)
+            else:
+                messagebox.showinfo("완료", "저장되었습니다.")
 
         def toggle_hide():
             toggle_customer_hidden(customer_id)
@@ -2111,6 +2245,8 @@ class LedgerDesktopApp:
         ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
         ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
         ttk.Button(actions, text="매칭 보기", command=lambda: self._open_matching_for_customer(customer_id)).pack(side="left", padx=4)
+        ttk.Button(actions, text="제안서 PDF(상위5)", command=lambda: self.generate_proposal_for_customer(customer_id, top_n=5)).pack(side="left", padx=4)
+        ttk.Button(actions, text="제안문구 복사(상위5)", command=lambda: self.copy_message_for_customer(customer_id, top_n=5)).pack(side="left", padx=4)
     
     def _open_matching_for_customer(self, customer_id: int):
         # 매칭 탭으로 전환하고 고객 선택
@@ -2123,6 +2259,50 @@ class LedgerDesktopApp:
                 break
         self.run_matching()
 
+
+    def _open_related_navigation_popup(self, *, title: str, customers: list[int] | None = None, properties: list[int] | None = None):
+        customers = customers or []
+        properties = properties or []
+        if not customers and not properties:
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title(title)
+        win.geometry("520x360")
+
+        tree = ttk.Treeview(win, columns=("type", "id", "name"), show="headings")
+        tree.heading("type", text="유형")
+        tree.heading("id", text="ID")
+        tree.heading("name", text="이름/주소")
+        tree.column("type", width=100, anchor="center")
+        tree.column("id", width=80, anchor="center")
+        tree.column("name", width=300)
+        tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        for cid in customers:
+            c = get_customer(cid)
+            tree.insert("", "end", values=("고객", cid, str((c or {}).get("customer_name") or f"고객 {cid}")))
+        for pid in properties:
+            p = get_property(pid)
+            name = f"{(p or {}).get('complex_name','')} {(p or {}).get('address_detail','')}".strip()
+            tree.insert("", "end", values=("물건", pid, name or f"물건 {pid}"))
+
+        def open_selected():
+            sel = tree.selection()
+            if not sel:
+                return
+            t, sid, _ = tree.item(sel[0], "values")
+            try:
+                sid_i = int(sid)
+            except Exception:
+                return
+            if t == "고객":
+                self.open_customer_detail(sid_i)
+            else:
+                self.open_property_detail(sid_i)
+
+        tree.bind("<Double-1>", lambda _e: open_selected())
+        ttk.Button(win, text="열기", command=open_selected).pack(pady=6)
 
     def _top_matches_for_customer(self, customer_id: int, top_n: int = 5) -> tuple[dict | None, list[dict]]:
         customer = get_customer(customer_id)
@@ -2142,16 +2322,13 @@ class LedgerDesktopApp:
             messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
             return
     
-        photos_by_property: dict[int, list[str]] = {}
+        photos_by_property: dict[int, list[dict[str, str]]] = {}
         for p in props:
             try:
                 pid = int(p.get("id"))
             except Exception:
                 continue
-            photos_by_property[pid] = [
-                {"file_path": r.get("file_path"), "tag": r.get("tag")}
-                for r in list_photos(pid) if r.get("file_path")
-            ]
+            photos_by_property[pid] = self._ranked_photos_for_property(pid)
     
         self.settings = self._load_settings()
         out_dir = self.settings.sync_dir / "exports" / "proposals"
