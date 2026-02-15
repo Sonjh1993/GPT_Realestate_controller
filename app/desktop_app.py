@@ -2218,14 +2218,25 @@ class LedgerDesktopApp:
             if not tag:
                 messagebox.showwarning("확인", "사진 구분 태그를 선택해주세요.")
                 return
-            dst = self._copy_photo_to_library(Path(src), property_id, tag=tag)
-            add_photo(property_id, str(dst), tag=tag)
-            current = get_property(property_id)
-            if current and str(current.get("status") or "") == "신규등록":
-                update_property(property_id, {"status": "검수완료(사진등록)"})
-            ph_tag_var.set(PHOTO_TAG_VALUES[0])
-            refresh_photos()
-            self.refresh_properties()
+            try:
+                dst = self._copy_photo_to_library(Path(src), property_id, tag=tag)
+                add_photo(property_id, str(dst), tag=tag)
+                current = get_property(property_id)
+                if current and str(current.get("status") or "") == "신규등록":
+                    update_property(property_id, {"status": "검수완료(사진등록)"})
+                ph_tag_var.set(PHOTO_TAG_VALUES[0])
+                refresh_photos()
+                self.refresh_properties()
+                # 업로드 후에도 상세창/물건탭이 유지되도록 포커스 복귀
+                try:
+                    self.main.select(self.property_tab)
+                    nb.select(tab_photos)
+                    win.lift()
+                    win.focus_force()
+                except Exception:
+                    pass
+            except Exception as exc:
+                messagebox.showerror("사진 업로드 실패", str(exc))
 
         def open_photo():
             sel = ph_tree.selection()
