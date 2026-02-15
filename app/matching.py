@@ -65,7 +65,8 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
     - hidden/deleted는 호출자가 이미 걸러준다고 가정.
     - 점수는 단순 규칙 기반(설명 가능성 > 복잡도).
     """
-    pref_tab = _to_text(customer.get("preferred_tab")).strip()
+    pref_tab_text = _to_text(customer.get("preferred_tab")).strip()
+    pref_tabs = {t.strip() for t in pref_tab_text.split(",") if t.strip()}
     pref_area = _to_text(customer.get("preferred_area")).strip()
     pref_pyeong = _to_text(customer.get("preferred_pyeong")).strip()
     floor_pref = _to_text(customer.get("floor_preference")).strip()
@@ -79,7 +80,8 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
 
     for p in properties:
         # 탭 필터
-        if pref_tab and _to_text(p.get("tab")).strip() and pref_tab != _to_text(p.get("tab")).strip():
+        prop_tab = _to_text(p.get("tab")).strip()
+        if pref_tabs and prop_tab and prop_tab not in pref_tabs:
             continue
 
         score = 0

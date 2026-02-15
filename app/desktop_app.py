@@ -1284,6 +1284,45 @@ class LedgerDesktopApp:
         ttk.Button(btns, text="상세", command=open_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=delete_it).pack(side="left", padx=4)
 
+    def _parse_preferred_tabs(self, text: str) -> list[str]:
+        return [t.strip() for t in str(text or "").split(",") if t.strip()]
+
+    def _join_preferred_tabs(self, tabs: list[str]) -> str:
+        ordered = [t for t in PROPERTY_TABS if t in set(tabs)]
+        return ", ".join(ordered)
+
+    def _open_tab_multi_select(self, parent: tk.Misc, current_text: str) -> str | None:
+        popup = tk.Toplevel(parent)
+        popup.title("희망 유형 선택")
+        popup.geometry("360x260")
+
+        current = set(self._parse_preferred_tabs(current_text))
+        vars_map = {tab: tk.BooleanVar(value=(tab in current)) for tab in PROPERTY_TABS}
+
+        frm = ttk.Frame(popup)
+        frm.pack(fill="both", expand=True, padx=12, pady=12)
+
+        ttk.Label(frm, text="복수 선택 가능").pack(anchor="w", pady=(0, 8))
+        for tab in PROPERTY_TABS:
+            ttk.Checkbutton(frm, text=tab, variable=vars_map[tab]).pack(anchor="w", pady=2)
+
+        result: dict[str, str | None] = {"value": None}
+
+        def done():
+            selected = [tab for tab in PROPERTY_TABS if vars_map[tab].get()]
+            result["value"] = self._join_preferred_tabs(selected)
+            popup.destroy()
+
+        btns = ttk.Frame(frm)
+        btns.pack(fill="x", pady=10)
+        ttk.Button(btns, text="확인", command=done).pack(side="left", padx=4)
+        ttk.Button(btns, text="취소", command=popup.destroy).pack(side="left", padx=4)
+
+        popup.transient(parent)
+        popup.grab_set()
+        popup.wait_window()
+        return result["value"]
+
     def _build_customer_ui(self):
         top = ttk.LabelFrame(self.customer_tab, text="고객")
         top.pack(fill="x", padx=10, pady=8)
@@ -1300,12 +1339,13 @@ class LedgerDesktopApp:
         ent.bind("<Return>", lambda _e: self.refresh_customers())
         ttk.Button(top, text="초기화", command=lambda: (self.customer_phone_query.set(""), self.refresh_customers())).pack(side="left", padx=4)
 
-        cols = ("id", "customer_name", "phone", "deal_type", "size", "move_in", "floor_preference", "status", "updated_at")
+        cols = ("id", "customer_name", "phone", "preferred_tab", "deal_type", "size", "move_in", "floor_preference", "status", "updated_at")
         self.customer_tree = ttk.Treeview(self.customer_tab, columns=cols, show="headings", height=22)
         col_defs = [
             ("id", 55),
             ("customer_name", 120),
             ("phone", 120),
+            ("preferred_tab", 170),
             ("deal_type", 90),
             ("size", 120),
             ("move_in", 120),
@@ -1317,6 +1357,7 @@ class LedgerDesktopApp:
             "id": "",
             "customer_name": "고객명",
             "phone": "전화번호",
+            "preferred_tab": "희망유형",
             "deal_type": "거래유형",
             "size": "희망크기",
             "move_in": "입주희망",
@@ -1346,7 +1387,7 @@ class LedgerDesktopApp:
         vars_ = {
             "customer_name": tk.StringVar(),
             "phone": tk.StringVar(),
-            "preferred_tab": tk.StringVar(value=PROPERTY_TABS[0]),
+            "preferred_tab": tk.StringVar(value=""),
             "deal_type": tk.StringVar(value="전월세"),
             "size_unit": tk.StringVar(value="㎡"),
             "size_value": tk.StringVar(),
@@ -1377,7 +1418,10 @@ class LedgerDesktopApp:
         ttk.Label(s1, text="전화번호*").grid(row=1, column=0, padx=6, pady=8, sticky="e")
         ttk.Entry(s1, textvariable=vars_["phone"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s1, text="희망 단지").grid(row=2, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s1, textvariable=vars_["preferred_tab"], values=PROPERTY_TABS, state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        pref_tab_wrap = ttk.Frame(s1)
+        pref_tab_wrap.grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Entry(pref_tab_wrap, textvariable=vars_["preferred_tab"], width=24, state="readonly").pack(side="left")
+        ttk.Button(pref_tab_wrap, text="선택", command=lambda: (lambda v: vars_["preferred_tab"].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_["preferred_tab"].get()))).pack(side="left", padx=4)
         ttk.Label(s1, text="거래유형").grid(row=3, column=0, padx=6, pady=8, sticky="e")
         ttk.Combobox(s1, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=3, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s1, text="입주 희망일").grid(row=4, column=0, padx=6, pady=8, sticky="e")
@@ -1484,6 +1528,7 @@ class LedgerDesktopApp:
                     row.get("id"),
                     row.get("customer_name"),
                     row.get("phone"),
+                    row.get("preferred_tab") or "",
                     row.get("deal_type") or "",
                     size,
                     row.get("move_in_period"),
@@ -2206,7 +2251,10 @@ class LedgerDesktopApp:
         for i, (label, key) in enumerate(fields):
             ttk.Label(form, text=label).grid(row=i // 3, column=(i % 3) * 2, padx=6, pady=6, sticky="e")
             if key == "preferred_tab":
-                w = ttk.Combobox(form, textvariable=vars_[key], values=PROPERTY_TABS, width=22, state="readonly")
+                wrap = ttk.Frame(form)
+                ttk.Entry(wrap, textvariable=vars_[key], width=20, state="readonly").pack(side="left")
+                ttk.Button(wrap, text="선택", command=lambda k=key: (lambda v: vars_[k].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_[k].get()))).pack(side="left", padx=2)
+                w = wrap
             elif key == "status":
                 w = ttk.Combobox(form, textvariable=vars_[key], values=CUSTOMER_STATUS_VALUES, width=22, state="readonly")
             else:
