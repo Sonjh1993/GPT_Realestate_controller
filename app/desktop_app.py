@@ -88,6 +88,41 @@ def _open_folder(path: Path) -> None:
     except Exception as exc:
         messagebox.showerror("오류", f"폴더 열기 실패: {exc}")
 
+def fmt_phone(phone: str) -> str:
+    d = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if len(d) == 11:
+        return f"{d[:3]}-{d[3:7]}-{d[7:]}"
+    if len(d) == 10:
+        return f"{d[:3]}-{d[3:6]}-{d[6:]}"
+    return str(phone or "")
+
+
+def customer_label(c: dict) -> str:
+    name = str(c.get("customer_name") or "").strip()
+    phone = fmt_phone(str(c.get("phone") or "").strip())
+    if name and phone:
+        return f"{name}({phone})"
+    return name or phone or "고객"
+
+
+def property_label(p: dict) -> str:
+    complex_name = str(p.get("complex_name") or "").strip()
+    dong = str(p.get("dong") or "").strip()
+    ho = str(p.get("ho") or "").strip()
+    addr = str(p.get("address_detail") or "").strip()
+    unit = str(p.get("unit_type") or "").strip()
+    pyeong = str(p.get("pyeong") or "").strip()
+    core = " ".join(x for x in [complex_name, f"{dong}동" if dong else "", f"{ho}호" if ho else ""] if x).strip()
+    if not core:
+        core = " ".join(x for x in [complex_name, addr] if x).strip() or "매물"
+    tail = ""
+    if unit and pyeong:
+        tail = f" {unit}({pyeong}평)"
+    elif unit:
+        tail = f" {unit}"
+    return (core + tail).strip()
+
+
 
 @dataclass
 class AppSettings:
@@ -109,6 +144,7 @@ class LedgerDesktopApp:
         self.sort_state: dict[tuple[int, str], bool] = {}
         self.task_sort_col = "due_at"
         self.task_sort_desc = False
+        self.enable_handoff = False
 
         init_db()
         self.settings = self._load_settings()
@@ -253,10 +289,10 @@ class LedgerDesktopApp:
         ttk.Button(tctrl, text="관련 열기", command=self.open_selected_task_related).pack(side="left", padx=4)
         ttk.Button(tctrl, text="새로고침", command=self.refresh_tasks).pack(side="left", padx=4)
 
-        tcols = ("id", "due_at", "title", "entity", "status")
+        tcols = ("due_at", "title", "entity", "status")
         self.tasks_tree = ttk.Treeview(task_frame, columns=tcols, show="headings", height=18)
-        twidths = {"id": 55, "due_at": 170, "title": 430, "entity": 340, "status": 100}
-        tlabels = {"id": "ID", "due_at": "일정일시", "title": "할 일", "entity": "고객/물건", "status": "상태"}
+        twidths = {"due_at": 170, "title": 470, "entity": 360, "status": 100}
+        tlabels = {"due_at": "일정일시", "title": "할 일", "entity": "대상", "status": "상태"}
         for c in tcols:
             self.tasks_tree.heading(c, text=tlabels.get(c, c), command=lambda col=c: self._sort_tasks_by(col))
             self.tasks_tree.column(c, width=twidths.get(c, 120))
@@ -300,7 +336,7 @@ class LedgerDesktopApp:
             self.dash_vars["viewings_7d"].set("0")
 
     def _sort_tasks_by(self, col: str):
-        if col not in {"id", "due_at", "title", "entity", "status"}:
+        if col not in {"due_at", "title", "entity", "status"}:
             return
         if self.task_sort_col == col:
             self.task_sort_desc = not self.task_sort_desc
@@ -323,7 +359,6 @@ class LedgerDesktopApp:
             return datetime.max if not desc else datetime.min
 
         key_map = {
-            "id": lambda r: int(r.get("id") or 0),
             "due_at": key_due,
             "title": lambda r: str(r.get("title") or ""),
             "entity": lambda r: self._task_entity_label(r),
@@ -343,17 +378,17 @@ class LedgerDesktopApp:
         if et == "PROPERTY":
             p = get_property(eid_i)
             if p:
-                return f"{p.get('complex_name') or ''} {p.get('address_detail') or ''}".strip() or f"물건#{eid_i}"
+                return property_label(p)
         if et == "CUSTOMER":
             c = get_customer(eid_i)
             if c:
-                return f"고객 {c.get('customer_name') or eid_i}".strip()
+                return customer_label(c)
         if et == "VIEWING":
             v = get_viewing(eid_i)
             if v and v.get("property_id"):
                 p = get_property(int(v.get("property_id")))
                 if p:
-                    return f"일정 {p.get('complex_name') or ''} {p.get('address_detail') or ''}".strip()
+                    return property_label(p)
             return f"일정#{eid_i}"
         return f"{et}#{eid_i}"
 
@@ -377,8 +412,8 @@ class LedgerDesktopApp:
             self.tasks_tree.insert(
                 "",
                 "end",
+                iid=str(r.get("id")),
                 values=(
-                    r.get("id"),
                     r.get("due_at") or "",
                     r.get("title") or "",
                     entity,
@@ -391,7 +426,7 @@ class LedgerDesktopApp:
         if not sel:
             return None
         try:
-            return int(self.tasks_tree.item(sel[0], "values")[0])
+            return int(sel[0])
         except Exception:
             return None
 
@@ -480,7 +515,7 @@ class LedgerDesktopApp:
                 tree.heading(c, text=c)
             tree.pack(fill="both", expand=True, padx=8, pady=8)
             for r in rows:
-                tree.insert("", "end", values=(r.get("id"), r.get("customer_name"), r.get("phone")))
+                tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
             def done():
                 sel = tree.selection()
                 if sel:
@@ -639,7 +674,7 @@ class LedgerDesktopApp:
                 pass
 
         messagebox.showinfo("완료", "할 일을 완료했습니다.")
-        if row:
+        if row and self.enable_handoff:
             self.open_task_handoff_dialog(row)
 
     def open_task_detail(self, task_id: int):
@@ -700,7 +735,7 @@ class LedgerDesktopApp:
             selected_customer = int(default_entity_id)
 
         task_type_var = tk.StringVar(value="상담 예약")
-        target_type_var = tk.StringVar(value="물건")
+        target_type_var = tk.StringVar(value="매물")
         note_var = tk.StringVar(value="")
         now = datetime.now()
         date_vars = {
@@ -749,10 +784,24 @@ class LedgerDesktopApp:
         ttk.Button(quick, text="+7일", command=lambda: set_quick(7)).pack(side="left", padx=2)
 
         ttk.Label(frm, text="연결대상").grid(row=3, column=0, sticky="e", padx=6, pady=6)
-        ttk.Combobox(frm, textvariable=target_type_var, state="readonly", width=36, values=["물건", "고객", "매칭(고객+물건)"]).grid(row=3, column=1, sticky="w", padx=6, pady=6)
+        ttk.Combobox(frm, textvariable=target_type_var, state="readonly", width=24, values=["매물", "고객", "없음"]).grid(row=3, column=1, sticky="w", padx=6, pady=6)
+        batch_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(frm, text="여러 매물에 같은 할일 생성(고급)", variable=batch_var).grid(row=4, column=1, sticky="w", padx=6, pady=2)
 
         def render_summary():
-            selected_summary.set(f"고객: {selected_customer or '-'} / 물건: {', '.join(map(str, selected_properties)) or '-'}")
+            c_label = "-"
+            if selected_customer:
+                c = get_customer(int(selected_customer))
+                c_label = customer_label(c or {})
+            p_label = "-"
+            if selected_properties:
+                labels = []
+                for pid in selected_properties:
+                    prow = get_property(int(pid))
+                    if prow:
+                        labels.append(property_label(prow))
+                p_label = ", ".join(labels) if labels else "-"
+            selected_summary.set(f"고객: {c_label} / 매물: {p_label}")
 
         def update_arrange_guide(_=None):
             if task_type_var.get().strip() == "약속 어레인지":
@@ -782,15 +831,17 @@ class LedgerDesktopApp:
             picked_ids = set(selected_properties)
 
             ttk.Entry(popup, textvariable=search_var, width=40).pack(padx=8, pady=4, anchor="w")
-            tree = ttk.Treeview(popup, columns=("pick", "id", "tab", "addr"), show="headings")
+            tree = ttk.Treeview(popup, columns=("pick", "complex", "label", "deal", "status"), show="headings")
             tree.heading("pick", text="선택")
-            tree.heading("id", text="번호")
-            tree.heading("tab", text="단지")
-            tree.heading("addr", text="주소")
+            tree.heading("complex", text="단지")
+            tree.heading("label", text="동/호")
+            tree.heading("deal", text="가격")
+            tree.heading("status", text="상태")
             tree.column("pick", width=56, anchor="center")
-            tree.column("id", width=64, anchor="center")
-            tree.column("tab", width=180)
-            tree.column("addr", width=260)
+            tree.column("complex", width=170)
+            tree.column("label", width=220)
+            tree.column("deal", width=200)
+            tree.column("status", width=90)
             tree.pack(fill="both", expand=True, padx=8, pady=8)
 
             item_to_id: dict[str, int] = {}
@@ -806,7 +857,7 @@ class LedgerDesktopApp:
                         continue
                     pid = int(r.get("id") or 0)
                     mark = "☑" if pid in picked_ids else "☐"
-                    iid = tree.insert("", "end", values=(mark, pid, r.get("tab"), r.get("address_detail")))
+                    iid = tree.insert("", "end", values=(mark, r.get("complex_name") or r.get("tab"), property_label(r), self._calc_price_summary(r), r.get("status")))
                     item_to_id[iid] = pid
                 selected_count_var.set(f"선택 {len(picked_ids)}건")
 
@@ -840,6 +891,8 @@ class LedgerDesktopApp:
             def done():
                 nonlocal selected_properties
                 selected_properties = sorted(picked_ids)
+                if not batch_var.get() and len(selected_properties) > 1:
+                    selected_properties = selected_properties[:1]
                 render_summary()
                 popup.destroy()
 
@@ -852,9 +905,10 @@ class LedgerDesktopApp:
             popup.title("고객 선택")
             search_var = tk.StringVar(value="")
             ttk.Entry(popup, textvariable=search_var, width=36).pack(padx=8, pady=4, anchor="w")
-            tree = ttk.Treeview(popup, columns=("id", "name", "phone"), show="headings")
-            for c in ("id", "name", "phone"):
-                tree.heading(c, text=c)
+            tree = ttk.Treeview(popup, columns=("name", "phone", "status"), show="headings")
+            tree.heading("name", text="이름")
+            tree.heading("phone", text="전화번호")
+            tree.heading("status", text="상태")
             tree.pack(fill="both", expand=True, padx=8, pady=8)
 
             def render():
@@ -867,7 +921,7 @@ class LedgerDesktopApp:
                     hay = f"{r.get('customer_name','')} {r.get('phone','')}".lower()
                     if q and q.lower() not in hay and (not qd or qd not in phone):
                         continue
-                    tree.insert("", "end", values=(r.get("id"), r.get("customer_name"), r.get("phone")))
+                    tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
 
             search_var.trace_add("write", lambda *_: render())
             render()
@@ -877,7 +931,7 @@ class LedgerDesktopApp:
                 sel = tree.selection()
                 if not sel:
                     return
-                selected_customer = int(tree.item(sel[0], "values")[0])
+                selected_customer = int(sel[0])
                 render_summary()
                 popup.destroy()
 
@@ -907,35 +961,21 @@ class LedgerDesktopApp:
                 messagebox.showwarning("확인", "일시 값이 올바르지 않습니다.")
                 return
 
-            if title == "상담 예약" and not (selected_properties or selected_customer):
-                messagebox.showwarning("확인", "상담 예약은 고객 또는 물건을 선택해야 합니다.")
-                return
-            if title == "집/상가 방문" and not selected_properties:
-                messagebox.showwarning("확인", "방문 일정은 물건 1개 이상이 필요합니다.")
-                return
-            if title == "계약 / 잔금 일정" and not selected_properties:
-                messagebox.showwarning("확인", "계약/잔금 일정은 물건 1개 이상이 필요합니다.")
-                return
-            if title in ("광고 등록", "후속(서류/정산/보관)") and not selected_properties:
-                messagebox.showwarning("확인", f"{title} 할 일은 물건 1개 이상이 필요합니다.")
-                return
-            if title == "약속 어레인지":
-                if not selected_customer or not selected_properties:
-                    messagebox.showwarning("확인", "약속 어레인지는 고객 1명 + 물건 1개 이상이 필요합니다.")
+            target = target_type_var.get().strip()
+            if target == "고객":
+                if not selected_customer:
+                    messagebox.showwarning("확인", "고객을 1명 선택해주세요.")
                     return
-                for pid in selected_properties:
-                    add_task(title=f"{title} (고객 {selected_customer})", due_at=due_at, entity_type="PROPERTY", entity_id=pid, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
-            elif selected_properties and title in ("집/상가 방문", "계약 / 잔금 일정", "광고 등록", "후속(서류/정산/보관)", "기타"):
-                for pid in selected_properties:
+                add_task(title=title, due_at=due_at, entity_type="CUSTOMER", entity_id=selected_customer, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+            elif target == "매물":
+                if not selected_properties:
+                    messagebox.showwarning("확인", "매물을 선택해주세요.")
+                    return
+                pids = selected_properties if batch_var.get() else selected_properties[:1]
+                for pid in pids:
                     add_task(title=title, due_at=due_at, entity_type="PROPERTY", entity_id=pid, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
             else:
-                entity_type = None
-                entity_id = None
-                if selected_properties:
-                    entity_type, entity_id = "PROPERTY", selected_properties[0]
-                elif selected_customer:
-                    entity_type, entity_id = "CUSTOMER", selected_customer
-                add_task(title=title, due_at=due_at, entity_type=entity_type, entity_id=entity_id, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+                add_task(title=title, due_at=due_at, entity_type=None, entity_id=None, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
 
             self.refresh_tasks()
             self.refresh_dashboard()
@@ -1929,7 +1969,7 @@ class LedgerDesktopApp:
         tree.pack(fill="both", expand=True, padx=8, pady=8)
         hidden_rows = [r for r in list_customers(include_deleted=False) if r.get("hidden")]
         for r in hidden_rows:
-            tree.insert("", "end", values=(r.get("id"), r.get("customer_name"), r.get("phone")))
+            tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
 
         def _selected_id():
             sel = tree.selection()
