@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import platform
 import re
 import shutil
@@ -2406,11 +2407,71 @@ class LedgerDesktopApp:
                 return
             webbrowser.open(url)
 
+        def make_script_bundle():
+            latest = get_property(property_id, include_deleted=True) or row
+            complex_name = str((latest or {}).get("complex_name") or "매물").strip()
+            address_detail = str((latest or {}).get("address_detail") or "").strip()
+            today = datetime.now().strftime("%Y%m%d")
+
+            title_raw = f"{today}_{complex_name}_{address_detail}".strip("_")
+            safe_title = re.sub(r'[\\/:*?"<>|]+', "_", title_raw)
+            safe_title = re.sub(r"\s+", "_", safe_title).strip("_") or f"{today}_매물_{property_id}"
+
+            base_dir = Path.home() / "Desktop" / "Google Drive" / "real_estate_note" / "scripts"
+            out_dir = base_dir / safe_title
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            photos = list_photos(property_id)
+            photo_entries = []
+            photos_dir = out_dir / "photos"
+            photos_dir.mkdir(parents=True, exist_ok=True)
+            for ph in photos:
+                src = Path(str(ph.get("file_path") or "").strip())
+                if src.exists() and src.is_file():
+                    dst = photos_dir / src.name
+                    if not dst.exists():
+                        shutil.copy2(src, dst)
+                    photo_entries.append({"tag": ph.get("tag") or "", "file": str(dst.name)})
+
+            price_summary = self._calc_price_summary(latest or {})
+            lines = [
+                f"매물 스크립트 ({today})",
+                "=" * 36,
+                f"단지: {complex_name}",
+                f"주소/동호: {address_detail}",
+                f"타입: {str((latest or {}).get('unit_type') or '')}",
+                f"면적/평형: {str((latest or {}).get('area') or '')}㎡ / {str((latest or {}).get('pyeong') or '')}평",
+                f"층/총층: {str((latest or {}).get('floor') or '')} / {str((latest or {}).get('total_floor') or '')}",
+                f"가격: {price_summary}",
+                f"입주가능일: {str((latest or {}).get('move_available_date') or '')}",
+                f"컨디션: {str((latest or {}).get('condition') or '')}",
+                f"향/뷰: {str((latest or {}).get('orientation') or '')} / {str((latest or {}).get('view') or '')}",
+                f"특이사항: {str((latest or {}).get('special_notes') or '')}",
+                "",
+                "사진 목록:",
+            ]
+            for pe in photo_entries:
+                lines.append(f"- [{pe['tag']}] photos/{pe['file']}")
+
+            (out_dir / "script.txt").write_text("\n".join(lines), encoding="utf-8")
+
+            payload = {
+                "property": latest or {},
+                "price_summary": price_summary,
+                "photos": photo_entries,
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+            (out_dir / "data.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            messagebox.showinfo("완료", f"스크립트 생성 완료\n{out_dir}")
+            _open_folder(out_dir)
+
         ttk.Button(actions, text="저장", command=save_changes).pack(side="left", padx=4)
         ttk.Button(actions, text="네이버 링크 열기", command=open_link).pack(side="left", padx=4)
         ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
         ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
         ttk.Button(actions, text="할 일 추가", command=lambda: self.open_add_task_window(default_entity_type="PROPERTY", default_entity_id=property_id)).pack(side="left", padx=4)
+        ttk.Button(actions, text="스크립트 만들기", command=make_script_bundle).pack(side="left", padx=4)
 
         # ---- photos tab
         ph_box = ttk.LabelFrame(tab_photos, text="사진")
