@@ -94,6 +94,9 @@ def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any
             detail.append(f"가격:{price_summary}")
         if floor or total_floor:
             detail.append(f"층: {floor}/{total_floor}".strip("/"))
+        move_available = str(p.get("move_available_date") or "").strip()
+        if move_available:
+            detail.append(f"입주가능:{move_available}")
         if cond:
             detail.append(f"컨디션:{cond}")
         if ori or view:
@@ -172,6 +175,15 @@ def generate_proposal_pdf(
         spaceBefore=8,
         spaceAfter=4,
     )
+    style_price = ParagraphStyle(
+        "price",
+        parent=styles["BodyText"],
+        fontName="HYGothic-Medium" if "HYGothic-Medium" in pdfmetrics.getRegisteredFontNames() else "HYSMyeongJo-Medium",
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#1f4e79"),
+        spaceAfter=4,
+    )
     style_body = ParagraphStyle(
         "body",
         parent=styles["BodyText"],
@@ -238,6 +250,10 @@ def generate_proposal_pdf(
         elements.append(Paragraph(f"{idx}. {title_line}", style_h2))
 
         info_lines = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            elements.append(Paragraph(f"가격: {price_summary}", style_price))
+
         area = p.get("area")
         pyeong = p.get("pyeong")
         if area:
@@ -247,6 +263,8 @@ def generate_proposal_pdf(
         if p.get("orientation") or p.get("view"):
             ov = " / ".join([str(x).strip() for x in [p.get("orientation"), p.get("view")] if str(x or "").strip()])
             info_lines.append(f"향/뷰: {ov}")
+        if p.get("move_available_date"):
+            info_lines.append(f"입주가능일: {p.get('move_available_date')}")
         if p.get("condition") or p.get("repair_needed") is not None:
             rn = _yn(p.get("repair_needed"))
             cn = str(p.get("condition") or "").strip()
