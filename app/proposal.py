@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import money_utils
+
 # reportlab는 선택 의존성 (PDF 생성 시에만 필요)
 try:
     from reportlab.lib.pagesizes import A4
@@ -31,9 +33,7 @@ try:
         PageBreak,
         Paragraph,
         SimpleDocTemplate,
-        Spacer,
-        Table,
-        TableStyle,
+        Spacer
     )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
@@ -89,6 +89,9 @@ def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any
             title = f"물건ID {p.get('id')}"
 
         detail = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            detail.append(f"가격:{price_summary}")
         if floor or total_floor:
             detail.append(f"층: {floor}/{total_floor}".strip("/"))
         if cond:
@@ -277,24 +280,12 @@ def generate_proposal_pdf(
         chosen = normalized[:max_photos_per_property]
 
         if chosen:
-            img_cells = [build_image(str(it.get("file_path") or "")) for it in chosen]
-            cap_cells = [Paragraph(str(it.get("tag") or "사진"), style_small) for it in chosen]
-            img_table = Table([img_cells, cap_cells], colWidths=[45 * mm] * len(img_cells))
-            img_table.setStyle(
-                TableStyle(
-                    [
-                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                        ("TOPPADDING", (0, 0), (-1, -1), 2),
-                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ]
-                )
-            )
-            elements.append(img_table)
+            for it in chosen[:3]:
+                elements.append(build_image(str(it.get("file_path") or ""), max_w_mm=55, max_h_mm=44))
+                elements.append(Paragraph(str(it.get("tag") or "사진"), style_small))
             elements.append(Spacer(1, 8))
         else:
+            elements.append(Paragraph("사진 없음", style_small))
             elements.append(Spacer(1, 6))
 
         # page break every ~3 items for readability

@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from . import money_utils
+
 
 def _to_text(v: Any) -> str:
     return "" if v is None else str(v)
@@ -72,6 +74,9 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
     floor_pref = _to_text(customer.get("floor_preference")).strip()
     view_pref = _to_text(customer.get("view_preference")).strip()
     loc_pref = _to_text(customer.get("location_preference")).strip()
+    deal_type = _to_text(customer.get("deal_type")).strip()
+    budget_10m = money_utils.to_int(customer.get("budget_10m"), 0)
+    rent_budget_10man = money_utils.to_int(customer.get("wolse_rent_10man"), 0)
 
     a_min, a_max = parse_range(pref_area)
     p_min, p_max = parse_range(pref_pyeong)
@@ -84,8 +89,18 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
         if pref_tabs and prop_tab and prop_tab not in pref_tabs:
             continue
 
+        if deal_type == "매매" and not p.get("deal_sale"):
+            continue
+        if deal_type == "전세" and not p.get("deal_jeonse"):
+            continue
+        if deal_type == "월세" and not p.get("deal_wolse"):
+            continue
+
         score = 0
         reasons: list[str] = []
+        if deal_type:
+            reasons.append("거래유형 일치")
+            score += 15
 
         # 면적/평형
         area = p.get("area")
@@ -145,6 +160,24 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
             score += 4
         elif cond == "중":
             score += 2
+
+        if deal_type in {"매매", "전세"} and budget_10m > 0:
+            if deal_type == "매매":
+                price_10m = money_utils.eok_che_to_ten_million(p.get("price_sale_eok"), p.get("price_sale_che"))
+            else:
+                price_10m = money_utils.eok_che_to_ten_million(p.get("price_jeonse_eok"), p.get("price_jeonse_che"))
+            if price_10m <= budget_10m:
+                score += 18
+                reasons.append("예산 범위 일치")
+            else:
+                score -= min(20, max(0, price_10m - budget_10m) // 2)
+        elif deal_type == "월세" and rent_budget_10man > 0:
+            p_rent_10man = money_utils.man_to_ten_man(p.get("wolse_rent_man"))
+            if p_rent_10man <= rent_budget_10man:
+                score += 16
+                reasons.append("월세 예산 범위 일치")
+            else:
+                score -= min(20, max(0, p_rent_10man - rent_budget_10man))
 
         results.append(MatchResult(property_id=int(p.get("id")), score=score, reasons=reasons, property_row=p))
 

@@ -17,6 +17,7 @@ from .proposal import build_kakao_message, generate_proposal_pdf
 from .tasks_engine import reconcile_auto_tasks
 from .sheet_sync import SyncSettings, upload_visible_data
 from . import unit_master
+from . import money_utils
 from .storage import (
     CUSTOMER_STATUS_VALUES,
     PHOTO_TAG_VALUES,
@@ -242,9 +243,7 @@ class LedgerDesktopApp:
         pw.pack(fill="both", expand=True, padx=10, pady=10)
 
         task_frame = ttk.LabelFrame(pw, text="할 일(Next Action)")
-        schedule_frame = ttk.LabelFrame(pw, text="다가오는 일정(최근)")
         pw.add(task_frame, weight=1)
-        pw.add(schedule_frame, weight=2)
 
         # ---- Tasks
         tctrl = ttk.Frame(task_frame)
@@ -267,15 +266,6 @@ class LedgerDesktopApp:
         t_x.pack(fill="x", padx=6, pady=(0,6))
         self.tasks_tree.bind("<Double-1>", self._on_double_click_task)
 
-        # ---- Upcoming viewings
-        cols = ("id", "start", "end", "title", "property_id", "customer_id", "status")
-        self.upcoming_tree = ttk.Treeview(schedule_frame, columns=cols, show="headings", height=18)
-        widths = {"id": 60, "start": 150, "end": 150, "title": 360, "property_id": 90, "customer_id": 90, "status": 90}
-        for c in cols:
-            self.upcoming_tree.heading(c, text=c)
-            self.upcoming_tree.column(c, width=widths.get(c, 120))
-        self.upcoming_tree.pack(fill="both", expand=True, padx=6, pady=6)
-        self.upcoming_tree.bind("<Double-1>", self._on_double_click_viewing)
 
     def refresh_dashboard(self):
         props = list_properties(include_deleted=False)
@@ -290,41 +280,24 @@ class LedgerDesktopApp:
         except Exception:
             self.dash_vars["tasks_open"].set("0")
 
-        # next 7 days viewings
-        viewings = list_viewings()
-        now = datetime.now()
-        end = now + timedelta(days=7)
-        upcoming = []
-        for v in viewings:
-            try:
-                st = datetime.fromisoformat(str(v.get("start_at")))
-            except Exception:
+        try:
+            now = datetime.now()
+            end = now + timedelta(days=7)
+            vcount = 0
+            for v in list_viewings():
+                dt = None
                 try:
-                    st = datetime.strptime(str(v.get("start_at")), "%Y-%m-%d %H:%M")
+                    dt = datetime.fromisoformat(str(v.get("start_at") or ""))
                 except Exception:
-                    continue
-            if now <= st <= end:
-                upcoming.append(v)
-        upcoming.sort(key=lambda x: x.get("start_at", ""))
-
-        self.dash_vars["viewings_7d"].set(str(len(upcoming)))
-
-        for i in self.upcoming_tree.get_children():
-            self.upcoming_tree.delete(i)
-        for v in upcoming[:200]:
-            self.upcoming_tree.insert(
-                "",
-                "end",
-                values=(
-                    v.get("id"),
-                    v.get("start_at"),
-                    v.get("end_at"),
-                    v.get("title"),
-                    v.get("property_id"),
-                    v.get("customer_id") or "",
-                    v.get("status"),
-                ),
-            )
+                    try:
+                        dt = datetime.strptime(str(v.get("start_at") or ""), "%Y-%m-%d %H:%M")
+                    except Exception:
+                        dt = None
+                if dt and now <= dt <= end:
+                    vcount += 1
+            self.dash_vars["viewings_7d"].set(str(vcount))
+        except Exception:
+            self.dash_vars["viewings_7d"].set("0")
 
     def _sort_tasks_by(self, col: str):
         if col not in {"id", "due_at", "title", "entity", "status"}:
@@ -721,6 +694,10 @@ class LedgerDesktopApp:
 
         selected_properties: list[int] = []
         selected_customer: int | None = None
+        if default_entity_type == "PROPERTY" and default_entity_id:
+            selected_properties = [int(default_entity_id)]
+        elif default_entity_type == "CUSTOMER" and default_entity_id:
+            selected_customer = int(default_entity_id)
 
         task_type_var = tk.StringVar(value="상담 예약")
         target_type_var = tk.StringVar(value="물건")
@@ -948,6 +925,9 @@ class LedgerDesktopApp:
                     return
                 for pid in selected_properties:
                     add_task(title=f"{title} (고객 {selected_customer})", due_at=due_at, entity_type="PROPERTY", entity_id=pid, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+            elif selected_properties and title in ("집/상가 방문", "계약 / 잔금 일정", "광고 등록", "후속(서류/정산/보관)", "기타"):
+                for pid in selected_properties:
+                    add_task(title=title, due_at=due_at, entity_type="PROPERTY", entity_id=pid, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
             else:
                 entity_type = None
                 entity_id = None
@@ -1060,14 +1040,7 @@ class LedgerDesktopApp:
         self.sort_state[key] = asc
 
     def _calc_price_summary(self, row: dict) -> str:
-        parts = []
-        if row.get("deal_sale"):
-            parts.append(f"매매 {row.get('price_sale_eok') or 0}억 {row.get('price_sale_che') or 0}천")
-        if row.get("deal_jeonse"):
-            parts.append(f"전세 {row.get('price_jeonse_eok') or 0}억 {row.get('price_jeonse_che') or 0}천")
-        if row.get("deal_wolse"):
-            parts.append(f"월세 보증 {row.get('wolse_deposit_eok') or 0}억 {row.get('wolse_deposit_che') or 0}천 / {row.get('wolse_rent_man') or 0}만")
-        return " / ".join(parts)
+        return money_utils.property_price_summary(row)
 
     def refresh_properties(self):
         q = self.property_search_var.get().strip().lower() if hasattr(self, "property_search_var") else ""
@@ -1115,13 +1088,10 @@ class LedgerDesktopApp:
             "deal_sale": tk.BooleanVar(value=False),
             "deal_jeonse": tk.BooleanVar(value=False),
             "deal_wolse": tk.BooleanVar(value=False),
-            "price_sale_eok": tk.StringVar(value="0"),
-            "price_sale_che": tk.StringVar(value="0"),
-            "price_jeonse_eok": tk.StringVar(value="0"),
-            "price_jeonse_che": tk.StringVar(value="0"),
-            "wolse_deposit_eok": tk.StringVar(value="0"),
-            "wolse_deposit_che": tk.StringVar(value="0"),
-            "wolse_rent_man": tk.StringVar(value="0"),
+            "price_sale_10m": tk.StringVar(value="0"),
+            "price_jeonse_10m": tk.StringVar(value="0"),
+            "wolse_deposit_10m": tk.StringVar(value="0"),
+            "wolse_rent_10man": tk.StringVar(value="0"),
             "condition": tk.StringVar(value="중"),
             "view": tk.StringVar(value="탁 트인 뷰"),
             "orientation": tk.StringVar(value="남향"),
@@ -1179,25 +1149,19 @@ class LedgerDesktopApp:
         ttk.Label(step1, textvariable=manual_hint, foreground="#555").grid(row=7, column=0, columnspan=2, padx=6, pady=2, sticky="w")
 
         # Step2
-        ttk.Checkbutton(step2, text="매도", variable=vars_["deal_sale"]).grid(row=0, column=0, padx=6, pady=6, sticky="w")
-        ttk.Entry(step2, textvariable=vars_["price_sale_eok"], width=8).grid(row=0, column=1)
-        ttk.Label(step2, text="억").grid(row=0, column=2)
-        ttk.Entry(step2, textvariable=vars_["price_sale_che"], width=8).grid(row=0, column=3)
-        ttk.Label(step2, text="천").grid(row=0, column=4)
+        ttk.Checkbutton(step2, text="매매", variable=vars_["deal_sale"]).grid(row=0, column=0, padx=6, pady=6, sticky="w")
+        ttk.Entry(step2, textvariable=vars_["price_sale_10m"], width=12).grid(row=0, column=1)
+        ttk.Label(step2, text="천만원").grid(row=0, column=2)
 
         ttk.Checkbutton(step2, text="전세", variable=vars_["deal_jeonse"]).grid(row=1, column=0, padx=6, pady=6, sticky="w")
-        ttk.Entry(step2, textvariable=vars_["price_jeonse_eok"], width=8).grid(row=1, column=1)
-        ttk.Label(step2, text="억").grid(row=1, column=2)
-        ttk.Entry(step2, textvariable=vars_["price_jeonse_che"], width=8).grid(row=1, column=3)
-        ttk.Label(step2, text="천").grid(row=1, column=4)
+        ttk.Entry(step2, textvariable=vars_["price_jeonse_10m"], width=12).grid(row=1, column=1)
+        ttk.Label(step2, text="천만원").grid(row=1, column=2)
 
         ttk.Checkbutton(step2, text="월세", variable=vars_["deal_wolse"]).grid(row=2, column=0, padx=6, pady=6, sticky="w")
-        ttk.Entry(step2, textvariable=vars_["wolse_deposit_eok"], width=8).grid(row=2, column=1)
-        ttk.Label(step2, text="억").grid(row=2, column=2)
-        ttk.Entry(step2, textvariable=vars_["wolse_deposit_che"], width=8).grid(row=2, column=3)
-        ttk.Label(step2, text="천").grid(row=2, column=4)
-        ttk.Entry(step2, textvariable=vars_["wolse_rent_man"], width=8).grid(row=2, column=5)
-        ttk.Label(step2, text="만원").grid(row=2, column=6)
+        ttk.Entry(step2, textvariable=vars_["wolse_deposit_10m"], width=12).grid(row=2, column=1)
+        ttk.Label(step2, text="천만원").grid(row=2, column=2)
+        ttk.Entry(step2, textvariable=vars_["wolse_rent_10man"], width=12).grid(row=2, column=3)
+        ttk.Label(step2, text="십만원").grid(row=2, column=4)
 
         ttk.Label(step2, text="상태").grid(row=3, column=0, padx=6, pady=6, sticky="e")
         ttk.Combobox(step2, textvariable=vars_["status"], values=PROPERTY_STATUS_VALUES, state="readonly", width=20).grid(row=3, column=1, columnspan=2, padx=6, pady=6, sticky="w")
@@ -1337,11 +1301,11 @@ class LedgerDesktopApp:
                     return False
                 nums = []
                 if vars_["deal_sale"].get():
-                    nums += [vars_["price_sale_eok"].get(), vars_["price_sale_che"].get()]
+                    nums += [vars_["price_sale_10m"].get()]
                 if vars_["deal_jeonse"].get():
-                    nums += [vars_["price_jeonse_eok"].get(), vars_["price_jeonse_che"].get()]
+                    nums += [vars_["price_jeonse_10m"].get()]
                 if vars_["deal_wolse"].get():
-                    nums += [vars_["wolse_deposit_eok"].get(), vars_["wolse_deposit_che"].get(), vars_["wolse_rent_man"].get()]
+                    nums += [vars_["wolse_deposit_10m"].get(), vars_["wolse_rent_10man"].get()]
                 if any(not _is_non_negative_int(n) for n in nums):
                     messagebox.showwarning("입력 확인", "가격 입력은 숫자(0 포함)만 가능합니다.")
                     return False
@@ -1391,6 +1355,14 @@ class LedgerDesktopApp:
             data["move_available_date"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if mode == "날짜선택" else mode
             data["tab"] = tab
             data["complex_name"] = tab
+
+            sale_eok, sale_che = money_utils.ten_million_to_eok_che(vars_["price_sale_10m"].get())
+            jeonse_eok, jeonse_che = money_utils.ten_million_to_eok_che(vars_["price_jeonse_10m"].get())
+            wolse_eok, wolse_che = money_utils.ten_million_to_eok_che(vars_["wolse_deposit_10m"].get())
+            data["price_sale_eok"], data["price_sale_che"] = sale_eok, sale_che
+            data["price_jeonse_eok"], data["price_jeonse_che"] = jeonse_eok, jeonse_che
+            data["wolse_deposit_eok"], data["wolse_deposit_che"] = wolse_eok, wolse_che
+            data["wolse_rent_man"] = money_utils.ten_man_to_man(vars_["wolse_rent_10man"].get())
 
             if unit_master.has_master(tab):
                 floor_num = int(floor or 0)
@@ -1631,11 +1603,12 @@ class LedgerDesktopApp:
             "customer_name": tk.StringVar(),
             "phone": tk.StringVar(),
             "preferred_tab": tk.StringVar(value=""),
-            "deal_type": tk.StringVar(value="전월세"),
+            "deal_type": tk.StringVar(value="매매"),
             "size_unit": tk.StringVar(value="㎡"),
             "size_value": tk.StringVar(),
-            "budget_eok": tk.StringVar(value="0"),
-            "budget_che": tk.StringVar(value="0"),
+            "budget_10m": tk.StringVar(value="0"),
+            "wolse_deposit_10m": tk.StringVar(value="0"),
+            "wolse_rent_10man": tk.StringVar(value="0"),
             "move_in_period": tk.StringVar(),
             "location_preference": tk.StringVar(),
             "view_preference": tk.StringVar(value="비중요"),
@@ -1675,21 +1648,20 @@ class LedgerDesktopApp:
         ttk.Button(pref_tab_wrap, text="선택", command=lambda: (lambda v: vars_["preferred_tab"].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_["preferred_tab"].get()))).pack(side="left", padx=4)
 
         ttk.Label(s2, text="거래유형").grid(row=1, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["deal_type"], values=["전월세", "매수"], state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Combobox(s2, textvariable=vars_["deal_type"], values=["매매", "전세", "월세"], state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
         ttk.Label(s2, text="희망 크기").grid(row=2, column=0, padx=6, pady=8, sticky="e")
         size_wrap = ttk.Frame(s2)
         size_wrap.grid(row=2, column=1, padx=6, pady=8, sticky="w")
         ttk.Entry(size_wrap, textvariable=vars_["size_value"], width=18).pack(side="left")
         ttk.Combobox(size_wrap, textvariable=vars_["size_unit"], values=["㎡", "평"], state="readonly", width=8).pack(side="left", padx=4)
-        ttk.Label(s2, text="희망 거래가").grid(row=3, column=0, padx=6, pady=8, sticky="e")
-        budget_wrap = ttk.Frame(s2)
-        budget_wrap.grid(row=3, column=1, padx=6, pady=8, sticky="w")
-        ttk.Entry(budget_wrap, textvariable=vars_["budget_eok"], width=8).pack(side="left")
-        ttk.Label(budget_wrap, text="억").pack(side="left", padx=(2, 8))
-        ttk.Entry(budget_wrap, textvariable=vars_["budget_che"], width=8).pack(side="left")
-        ttk.Label(budget_wrap, text="천").pack(side="left", padx=2)
-        ttk.Label(s2, text="선호 위치").grid(row=4, column=0, padx=6, pady=8, sticky="e")
-        ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="매매/전세 예산(천만원)").grid(row=3, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["budget_10m"], width=16).grid(row=3, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="월세 보증금(천만원)").grid(row=4, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["wolse_deposit_10m"], width=16).grid(row=4, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="월세액(십만원)").grid(row=5, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["wolse_rent_10man"], width=16).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="선호 위치").grid(row=6, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=6, column=1, padx=6, pady=8, sticky="w")
 
         # Step3
         ttk.Label(s3, text="입주 희망일").grid(row=0, column=0, padx=6, pady=8, sticky="e")
@@ -1742,8 +1714,9 @@ class LedgerDesktopApp:
                 if not vars_["deal_type"].get().strip():
                     messagebox.showwarning("입력 확인", "거래유형을 선택해주세요.")
                     return False
-                if any(not _is_non_negative_int(n) for n in (vars_["budget_eok"].get(), vars_["budget_che"].get())):
-                    messagebox.showwarning("입력 확인", "예산(억/천)은 숫자만 입력해주세요.")
+                nums = [vars_["budget_10m"].get(), vars_["wolse_deposit_10m"].get(), vars_["wolse_rent_10man"].get()]
+                if any(not _is_non_negative_int(n) for n in nums):
+                    messagebox.showwarning("입력 확인", "예산(천만원/십만원)은 숫자만 입력해주세요.")
                     return False
                 return True
             if idx == 2:
@@ -1782,13 +1755,23 @@ class LedgerDesktopApp:
                 return
             payload = {k: v.get().strip() for k, v in vars_.items()}
             payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if move_mode.get() == "날짜선택" else move_mode.get().strip()
-            payload["budget"] = f"{payload.get('budget_eok', '0')}억 {payload.get('budget_che', '0')}천"
+            deal = payload.get("deal_type", "")
+            if deal == "월세":
+                payload["budget"] = f"월세 {payload.get('wolse_deposit_10m','0')}천만원 / {payload.get('wolse_rent_10man','0')}십만원"
+            elif deal == "전세":
+                payload["budget"] = f"전세 {payload.get('budget_10m','0')}천만원"
+            else:
+                payload["budget"] = f"매매 {payload.get('budget_10m','0')}천만원"
             if payload["size_unit"] == "㎡":
                 payload["preferred_area"] = payload["size_value"]
                 payload["preferred_pyeong"] = ""
             else:
                 payload["preferred_pyeong"] = payload["size_value"]
                 payload["preferred_area"] = ""
+
+            payload["budget_10m"] = int(payload.get("budget_10m", "0") or 0)
+            payload["wolse_deposit_10m"] = int(payload.get("wolse_deposit_10m", "0") or 0)
+            payload["wolse_rent_10man"] = int(payload.get("wolse_rent_10man", "0") or 0)
 
             try:
                 add_customer(payload)
@@ -1995,7 +1978,7 @@ class LedgerDesktopApp:
                 values=(
                     r.score,
                     f"{p.get('tab','')} / {p.get('address_detail','')} / {p.get('unit_type','')}",
-                    p.get("status", ""),
+                    money_utils.property_price_summary(p) or p.get("status", ""),
                     " / ".join(r.reasons[:2]),
                     p.get("id"),
                 ),
@@ -2035,7 +2018,7 @@ class LedgerDesktopApp:
         # fallback: first N rows in the tree
         for item in self.match_tree.get_children()[:fallback_top_n]:
             try:
-                pid = int(self.match_tree.item(item, "values")[1])
+                pid = int(self.match_tree.item(item, "values")[4])
                 ids.append(pid)
             except Exception:
                 continue

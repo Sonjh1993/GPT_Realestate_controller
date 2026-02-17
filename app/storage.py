@@ -122,6 +122,9 @@ def init_db() -> None:
             size_unit TEXT,
             size_value TEXT,
             budget TEXT,
+            budget_10m INTEGER DEFAULT 0,
+            wolse_deposit_10m INTEGER DEFAULT 0,
+            wolse_rent_10man INTEGER DEFAULT 0,
             move_in_period TEXT,
             view_preference TEXT,
             condition_preference TEXT,
@@ -237,6 +240,9 @@ CREATE TABLE IF NOT EXISTS audit_log (
             "deal_type": "TEXT",
             "size_unit": "TEXT",
             "size_value": "TEXT",
+            "budget_10m": "INTEGER DEFAULT 0",
+            "wolse_deposit_10m": "INTEGER DEFAULT 0",
+            "wolse_rent_10man": "INTEGER DEFAULT 0",
             "condition_preference": "TEXT",
             "has_pet": "TEXT",
             "status": "TEXT DEFAULT '문의'",
@@ -255,6 +261,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
     conn.execute("UPDATE properties SET status='신규등록' WHERE status='사진필요'")
 
     conn.execute("UPDATE customer_requests SET status='문의' WHERE status='진행'")
+    conn.execute("UPDATE customer_requests SET deal_type='전세' WHERE deal_type='전월세'")
     conn.execute("UPDATE customer_requests SET status='대기' WHERE status='보류'")
     conn.execute("UPDATE customer_requests SET status='계약완료' WHERE status='완료'")
     conn.execute("UPDATE customer_requests SET status='대기' WHERE status='대기'")
@@ -516,6 +523,9 @@ def add_customer(data: dict[str, Any]) -> int:
         "size_unit": data.get("size_unit", ""),
         "size_value": data.get("size_value", ""),
         "budget": data.get("budget", ""),
+        "budget_10m": int(data.get("budget_10m", 0) or 0),
+        "wolse_deposit_10m": int(data.get("wolse_deposit_10m", 0) or 0),
+        "wolse_rent_10man": int(data.get("wolse_rent_10man", 0) or 0),
         "move_in_period": data.get("move_in_period", ""),
         "view_preference": data.get("view_preference", ""),
         "condition_preference": data.get("condition_preference", ""),
@@ -559,6 +569,9 @@ def update_customer(customer_id: int, data: dict[str, Any]) -> None:
             size_unit=?,
             size_value=?,
             budget=?,
+            budget_10m=?,
+            wolse_deposit_10m=?,
+            wolse_rent_10man=?,
             move_in_period=?,
             view_preference=?,
             condition_preference=?,
@@ -580,6 +593,9 @@ def update_customer(customer_id: int, data: dict[str, Any]) -> None:
             data.get("size_unit", before.get("size_unit", "")),
             data.get("size_value", before.get("size_value", "")),
             data.get("budget", before.get("budget", "")),
+            int(data.get("budget_10m", before.get("budget_10m", 0)) or 0),
+            int(data.get("wolse_deposit_10m", before.get("wolse_deposit_10m", 0)) or 0),
+            int(data.get("wolse_rent_10man", before.get("wolse_rent_10man", 0)) or 0),
             data.get("move_in_period", before.get("move_in_period", "")),
             data.get("view_preference", before.get("view_preference", "")),
             data.get("condition_preference", before.get("condition_preference", "")),
