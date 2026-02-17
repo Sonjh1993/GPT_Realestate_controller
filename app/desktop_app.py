@@ -1543,23 +1543,29 @@ class LedgerDesktopApp:
         ttk.Button(top, text="숨김함", command=self.open_hidden_customers_window).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="내보내기/동기화", command=self.export_sync).pack(side="left", padx=4, pady=6)
 
-        ttk.Label(top, text="전화번호 검색").pack(side="left", padx=(24, 4))
+        ttk.Label(top, text="거래유형").pack(side="left", padx=(18, 4))
+        self.customer_deal_filter_var = tk.StringVar(value="전체")
+        deal_cb = ttk.Combobox(top, textvariable=self.customer_deal_filter_var, values=["전체", "매매", "전세", "월세"], state="readonly", width=8)
+        deal_cb.pack(side="left", padx=4)
+        deal_cb.bind("<<ComboboxSelected>>", lambda _e: self.refresh_customers())
+
+        ttk.Label(top, text="전화번호 검색").pack(side="left", padx=(18, 4))
         self.customer_phone_query = tk.StringVar(value="")
         ent = ttk.Entry(top, textvariable=self.customer_phone_query, width=24)
         ent.pack(side="left", padx=4)
         ent.bind("<KeyRelease>", lambda _e: self.refresh_customers())
         ent.bind("<Return>", lambda _e: self.refresh_customers())
-        ttk.Button(top, text="초기화", command=lambda: (self.customer_phone_query.set(""), self.refresh_customers())).pack(side="left", padx=4)
+        ttk.Button(top, text="초기화", command=lambda: (self.customer_phone_query.set(""), self.customer_deal_filter_var.set("전체"), self.refresh_customers())).pack(side="left", padx=4)
 
-        cols = ("id", "customer_name", "phone", "preferred_tab", "deal_type", "size", "move_in", "floor_preference", "status", "updated_at")
-        self.customer_tree = ttk.Treeview(self.customer_tab, columns=cols, show="headings", height=22)
+        cols = ("id", "customer_name", "phone", "preferred_tab", "deal_type", "budget", "size", "move_in", "floor_preference", "status", "updated_at")
         col_defs = [
             ("id", 55),
-            ("customer_name", 120),
+            ("customer_name", 110),
             ("phone", 120),
             ("preferred_tab", 170),
-            ("deal_type", 90),
-            ("size", 120),
+            ("deal_type", 80),
+            ("budget", 170),
+            ("size", 100),
             ("move_in", 120),
             ("floor_preference", 90),
             ("status", 80),
@@ -1571,28 +1577,43 @@ class LedgerDesktopApp:
             "phone": "전화번호",
             "preferred_tab": "희망유형",
             "deal_type": "거래유형",
+            "budget": "예산",
             "size": "희망크기",
             "move_in": "입주희망",
             "floor_preference": "층수선호",
             "status": "상태",
             "updated_at": "업데이트",
         }
-        for c, w in col_defs:
-            self.customer_tree.heading(c, text=col_labels.get(c, c))
-            self.customer_tree.column(c, width=w, stretch=(c != "id"))
-            if c == "id":
-                self.customer_tree.column(c, minwidth=0, width=0, stretch=False)
-        self.customer_tree.pack(fill="both", expand=True, padx=10, pady=8)
-        c_x = ttk.Scrollbar(self.customer_tab, orient="horizontal", command=self.customer_tree.xview)
-        self.customer_tree.configure(xscrollcommand=c_x.set)
-        c_x.pack(fill="x", padx=10, pady=(0,6))
-        self.customer_tree.bind("<Double-1>", self._on_double_click_customer)
+
+        self.customer_nb = ttk.Notebook(self.customer_tab)
+        self.customer_nb.pack(fill="both", expand=True, padx=10, pady=8)
+        self.customer_trees: dict[str, ttk.Treeview] = {}
+
+        for tab_name in ["전체", *PROPERTY_TABS]:
+            frame = ttk.Frame(self.customer_nb)
+            self.customer_nb.add(frame, text=tab_name)
+            tree = ttk.Treeview(frame, columns=cols, show="headings", height=22)
+            for c, w in col_defs:
+                tree.heading(c, text=col_labels.get(c, c))
+                tree.column(c, width=w, stretch=(c != "id"))
+                if c == "id":
+                    tree.column(c, minwidth=0, width=0, stretch=False)
+            tree.pack(fill="both", expand=True)
+            c_x = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
+            tree.configure(xscrollcommand=c_x.set)
+            c_x.pack(fill="x", pady=(0, 6))
+            tree.bind("<Double-1>", self._on_double_click_customer)
+            self.customer_trees[tab_name] = tree
 
         btns = ttk.Frame(self.customer_tab)
         btns.pack(fill="x", padx=10, pady=4)
         ttk.Button(btns, text="상세", command=self.open_selected_customer_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="숨김/보임", command=self.toggle_selected_customer).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=self.delete_selected_customer).pack(side="left", padx=4)
+
+    def _current_customer_tree(self) -> ttk.Treeview:
+        current_tab = self.customer_nb.tab(self.customer_nb.select(), "text") if hasattr(self, "customer_nb") else "전체"
+        return self.customer_trees.get(current_tab) or self.customer_trees.get("전체")
 
     def open_customer_wizard(self):
         win = tk.Toplevel(self.root)
@@ -1800,15 +1821,23 @@ class LedgerDesktopApp:
         self.open_customer_wizard()
 
     def refresh_customers(self):
-        for i in self.customer_tree.get_children():
-            self.customer_tree.delete(i)
         q = self.customer_phone_query.get().strip() if hasattr(self, "customer_phone_query") else ""
+        deal_filter = self.customer_deal_filter_var.get().strip() if hasattr(self, "customer_deal_filter_var") else "전체"
+
         rows = list_customers(phone_query=q)
         order = {"문의": 0, "임장예약": 1, "계약진행": 2, "계약완료": 3, "입주": 4, "대기": 5}
         rows.sort(key=lambda r: (order.get(str(r.get("status") or ""), 9), -int(r.get("id") or 0)))
+
+        for tree in getattr(self, "customer_trees", {}).values():
+            for i in tree.get_children():
+                tree.delete(i)
+
         for row in rows:
             if row.get("hidden"):
                 continue
+            if deal_filter != "전체" and str(row.get("deal_type") or "") != deal_filter:
+                continue
+
             size = ""
             if row.get("size_value"):
                 size = f"{row.get('size_value')} {row.get('size_unit') or ''}".strip()
@@ -1816,32 +1845,40 @@ class LedgerDesktopApp:
                 size = f"{row.get('preferred_area')} ㎡"
             elif row.get("preferred_pyeong"):
                 size = f"{row.get('preferred_pyeong')} 평"
-            self.customer_tree.insert(
-                "",
-                "end",
-                values=(
-                    row.get("id"),
-                    row.get("customer_name"),
-                    row.get("phone"),
-                    row.get("preferred_tab") or "",
-                    row.get("deal_type") or "",
-                    size,
-                    row.get("move_in_period"),
-                    row.get("floor_preference"),
-                    row.get("status"),
-                    row.get("updated_at"),
-                ),
+
+            values = (
+                row.get("id"),
+                row.get("customer_name"),
+                row.get("phone"),
+                row.get("preferred_tab") or "",
+                row.get("deal_type") or "",
+                row.get("budget") or "",
+                size,
+                row.get("move_in_period"),
+                row.get("floor_preference"),
+                row.get("status"),
+                row.get("updated_at"),
             )
 
+            # 전체 탭
+            if "전체" in self.customer_trees:
+                self.customer_trees["전체"].insert("", "end", values=values)
+
+            pref_tabs = set(self._parse_preferred_tabs(str(row.get("preferred_tab") or "")))
+            for tab_name in PROPERTY_TABS:
+                if tab_name in pref_tabs and tab_name in self.customer_trees:
+                    self.customer_trees[tab_name].insert("", "end", values=values)
+
+
     def toggle_selected_customer(self):
-        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
         if cid is None:
             return
         toggle_customer_hidden(cid)
         self.refresh_all()
     
     def delete_selected_customer(self):
-        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
         if cid is None:
             return
         if messagebox.askyesno("확인", "해당 고객 요청을 삭제 처리(복구 가능)할까요?"):
@@ -1849,16 +1886,17 @@ class LedgerDesktopApp:
             self.refresh_all()
     
     def open_selected_customer_detail(self):
-        cid = self._selected_id_from_tree(self.customer_tree, value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
         if cid is None:
             return
         self.open_customer_detail(cid)
     
     def _on_double_click_customer(self, event):
-        item = self.customer_tree.identify_row(event.y)
+        tree = event.widget if isinstance(event.widget, ttk.Treeview) else self._current_customer_tree()
+        item = tree.identify_row(event.y)
         if item:
             try:
-                cid = int(self.customer_tree.item(item, "values")[0])
+                cid = int(tree.item(item, "values")[0])
                 self.open_customer_detail(cid)
                 return
             except Exception:
