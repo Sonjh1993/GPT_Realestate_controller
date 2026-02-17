@@ -1499,6 +1499,16 @@ class LedgerDesktopApp:
     def _parse_preferred_tabs(self, text: str) -> list[str]:
         return [t.strip() for t in str(text or "").split(",") if t.strip()]
 
+    def _normalize_property_tab(self, text: str) -> str:
+        t = str(text or "").strip()
+        alias = {
+            "아파트단지1": "봉담자이 프라이드시티",
+            "아파트단지2": "힐스테이트봉담프라이드시티",
+            "힐스": "힐스테이트봉담프라이드시티",
+            "자이": "봉담자이 프라이드시티",
+        }
+        return alias.get(t, t)
+
     def _join_preferred_tabs(self, tabs: list[str]) -> str:
         ordered = [t for t in PROPERTY_TABS if t in set(tabs)]
         return ", ".join(ordered)
@@ -1864,10 +1874,13 @@ class LedgerDesktopApp:
             if "전체" in self.customer_trees:
                 self.customer_trees["전체"].insert("", "end", values=values)
 
-            pref_tabs = set(self._parse_preferred_tabs(str(row.get("preferred_tab") or "")))
+            pref_tabs = {self._normalize_property_tab(t) for t in self._parse_preferred_tabs(str(row.get("preferred_tab") or ""))}
             for tab_name in PROPERTY_TABS:
-                if tab_name in pref_tabs and tab_name in self.customer_trees:
-                    self.customer_trees[tab_name].insert("", "end", values=values)
+                norm_tab = self._normalize_property_tab(tab_name)
+                if norm_tab in pref_tabs and tab_name in self.customer_trees:
+                    tab_values = list(values)
+                    tab_values[3] = tab_name  # 탭별 리스트에서는 현재 탭명만 표시
+                    self.customer_trees[tab_name].insert("", "end", values=tuple(tab_values))
 
 
     def toggle_selected_customer(self):
