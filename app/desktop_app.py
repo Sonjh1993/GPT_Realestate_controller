@@ -885,7 +885,7 @@ class LedgerDesktopApp:
                     tree.delete(item)
                 q = search_var.get().strip().lower()
                 for r in rows:
-                    hay = f"{r.get('tab','')} {r.get('address_detail','')} {r.get('owner_phone','')}".lower()
+                    hay = f"{r.get('complex_name','')} {r.get('dong','')} {r.get('ho','')} {r.get('address_detail','')} {r.get('owner_phone','')}".lower()
                     if q and q not in hay:
                         continue
                     pid = int(r.get("id") or 0)
@@ -1148,20 +1148,36 @@ class LedgerDesktopApp:
         self.copy_message_for_property(pid)
 
     def refresh_properties(self):
-        q = self.property_search_var.get().strip().lower() if hasattr(self, "property_search_var") else ""
+        q_raw = self.property_search_var.get().strip() if hasattr(self, "property_search_var") else ""
+        q = q_raw.lower()
+        q_digits = "".join(ch for ch in q_raw if ch.isdigit())
         for tab in PROPERTY_TABS:
             tree = self.prop_trees[tab]
             for i in tree.get_children():
                 tree.delete(i)
-            rows = list_properties(tab)
+            rows = [r for r in list_properties(tab) if not r.get("hidden")]
+
+            def _score(row: dict) -> tuple[int, str]:
+                if not q:
+                    return (2, str(row.get("updated_at") or ""))
+                complex_name = str(row.get("complex_name") or "").lower()
+                dong = str(row.get("dong") or "").lower()
+                ho = str(row.get("ho") or "").lower()
+                addr_detail = str(row.get("address_detail") or "").lower()
+                primary = " ".join([complex_name, dong, ho, addr_detail])
+                secondary = " ".join([str(row.get("owner_phone") or "").lower(), str(row.get("special_notes") or "").lower()])
+                if q in primary or (q_digits and q_digits in "".join(ch for ch in primary if ch.isdigit())):
+                    return (0, str(row.get("updated_at") or ""))
+                if q in secondary or (q_digits and q_digits in "".join(ch for ch in secondary if ch.isdigit())):
+                    return (1, str(row.get("updated_at") or ""))
+                return (9, str(row.get("updated_at") or ""))
+
             rows.sort(key=lambda r: str(r.get("updated_at") or ""), reverse=True)
+            if q:
+                rows = [r for r in rows if _score(r)[0] < 9]
+                rows.sort(key=lambda r: _score(r)[0])
+
             for row in rows:
-                if row.get("hidden"):
-                    continue
-                if q:
-                    hay = " ".join([str(row.get("address_detail") or ""), str(row.get("owner_phone") or ""), str(row.get("special_notes") or "")]).lower()
-                    if q not in hay:
-                        continue
                 tree.insert(
                     "",
                     "end",
@@ -1221,7 +1237,7 @@ class LedgerDesktopApp:
 
         eok_options = [str(i) for i in range(0, 301)]
         che_options = [str(i) for i in range(0, 10)]
-        man_options = [str(i * 10) for i in range(0, 501)]
+        man_options = [str(i * 10) for i in range(0, 501)]  # 자주 쓰는 값(직접 입력 가능)
 
         header = ttk.Frame(win)
         header.pack(fill="x", padx=10, pady=(10, 4))
@@ -1262,24 +1278,25 @@ class LedgerDesktopApp:
 
         # Step2
         ttk.Checkbutton(step2, text="매매", variable=vars_["deal_sale"]).grid(row=0, column=0, padx=6, pady=6, sticky="w")
-        ttk.Combobox(step2, textvariable=vars_["price_sale_eok"], values=eok_options, state="readonly", width=6).grid(row=0, column=1)
+        ttk.Combobox(step2, textvariable=vars_["price_sale_eok"], values=eok_options, state="normal", width=6).grid(row=0, column=1)
         ttk.Label(step2, text="억").grid(row=0, column=2)
-        ttk.Combobox(step2, textvariable=vars_["price_sale_che"], values=che_options, state="readonly", width=6).grid(row=0, column=3)
+        ttk.Combobox(step2, textvariable=vars_["price_sale_che"], values=che_options, state="normal", width=6).grid(row=0, column=3)
         ttk.Label(step2, text="천만원").grid(row=0, column=4)
 
         ttk.Checkbutton(step2, text="전세", variable=vars_["deal_jeonse"]).grid(row=1, column=0, padx=6, pady=6, sticky="w")
-        ttk.Combobox(step2, textvariable=vars_["price_jeonse_eok"], values=eok_options, state="readonly", width=6).grid(row=1, column=1)
+        ttk.Combobox(step2, textvariable=vars_["price_jeonse_eok"], values=eok_options, state="normal", width=6).grid(row=1, column=1)
         ttk.Label(step2, text="억").grid(row=1, column=2)
-        ttk.Combobox(step2, textvariable=vars_["price_jeonse_che"], values=che_options, state="readonly", width=6).grid(row=1, column=3)
+        ttk.Combobox(step2, textvariable=vars_["price_jeonse_che"], values=che_options, state="normal", width=6).grid(row=1, column=3)
         ttk.Label(step2, text="천만원").grid(row=1, column=4)
 
         ttk.Checkbutton(step2, text="월세", variable=vars_["deal_wolse"]).grid(row=2, column=0, padx=6, pady=6, sticky="w")
-        ttk.Combobox(step2, textvariable=vars_["wolse_deposit_eok"], values=eok_options, state="readonly", width=6).grid(row=2, column=1)
+        ttk.Combobox(step2, textvariable=vars_["wolse_deposit_eok"], values=eok_options, state="normal", width=6).grid(row=2, column=1)
         ttk.Label(step2, text="억").grid(row=2, column=2)
-        ttk.Combobox(step2, textvariable=vars_["wolse_deposit_che"], values=che_options, state="readonly", width=6).grid(row=2, column=3)
+        ttk.Combobox(step2, textvariable=vars_["wolse_deposit_che"], values=che_options, state="normal", width=6).grid(row=2, column=3)
         ttk.Label(step2, text="천만원").grid(row=2, column=4)
-        ttk.Combobox(step2, textvariable=vars_["wolse_rent_man"], values=man_options, state="readonly", width=8).grid(row=2, column=5)
+        ttk.Combobox(step2, textvariable=vars_["wolse_rent_man"], values=man_options, state="normal", width=8).grid(row=2, column=5)
         ttk.Label(step2, text="만원").grid(row=2, column=6)
+        ttk.Label(step2, text="(만원 단위, 직접 입력 가능)", foreground="#666").grid(row=2, column=7, padx=4, sticky="w")
 
         ttk.Label(step2, text="상태").grid(row=3, column=0, padx=6, pady=6, sticky="e")
         ttk.Combobox(step2, textvariable=vars_["status"], values=PROPERTY_STATUS_VALUES, state="readonly", width=20).grid(row=3, column=1, columnspan=2, padx=6, pady=6, sticky="w")
@@ -1425,7 +1442,7 @@ class LedgerDesktopApp:
                 if vars_["deal_wolse"].get():
                     nums += [vars_["wolse_deposit_eok"].get(), vars_["wolse_deposit_che"].get(), vars_["wolse_rent_man"].get()]
                 if any(not _is_non_negative_int(n) for n in nums):
-                    messagebox.showwarning("입력 확인", "가격(억/천만원, 만원)은 숫자 선택만 가능합니다.")
+                    messagebox.showwarning("입력 확인", "가격(억/천만원, 만원)은 숫자만 입력해주세요.")
                     return False
                 return True
             if idx == 2:
@@ -1777,7 +1794,7 @@ class LedgerDesktopApp:
 
         eok_options = [str(i) for i in range(0, 301)]
         che_options = [str(i) for i in range(0, 10)]
-        man_options = [str(i * 10) for i in range(0, 501)]
+        man_options = [str(i * 10) for i in range(0, 501)]  # 자주 쓰는 값(직접 입력 가능)
 
         header = ttk.Frame(win)
         header.pack(fill="x", padx=10, pady=(10, 4))
@@ -1815,21 +1832,22 @@ class LedgerDesktopApp:
         ttk.Label(s2, text="매매/전세 예산").grid(row=3, column=0, padx=6, pady=8, sticky="e")
         b_wrap = ttk.Frame(s2)
         b_wrap.grid(row=3, column=1, padx=6, pady=8, sticky="w")
-        ttk.Combobox(b_wrap, textvariable=vars_["budget_eok"], values=eok_options, state="readonly", width=6).pack(side="left")
+        ttk.Combobox(b_wrap, textvariable=vars_["budget_eok"], values=eok_options, state="normal", width=6).pack(side="left")
         ttk.Label(b_wrap, text="억").pack(side="left", padx=2)
-        ttk.Combobox(b_wrap, textvariable=vars_["budget_che"], values=che_options, state="readonly", width=6).pack(side="left")
+        ttk.Combobox(b_wrap, textvariable=vars_["budget_che"], values=che_options, state="normal", width=6).pack(side="left")
         ttk.Label(b_wrap, text="천만원").pack(side="left", padx=2)
 
         ttk.Label(s2, text="월세 보증금").grid(row=4, column=0, padx=6, pady=8, sticky="e")
         d_wrap = ttk.Frame(s2)
         d_wrap.grid(row=4, column=1, padx=6, pady=8, sticky="w")
-        ttk.Combobox(d_wrap, textvariable=vars_["wolse_deposit_eok"], values=eok_options, state="readonly", width=6).pack(side="left")
+        ttk.Combobox(d_wrap, textvariable=vars_["wolse_deposit_eok"], values=eok_options, state="normal", width=6).pack(side="left")
         ttk.Label(d_wrap, text="억").pack(side="left", padx=2)
-        ttk.Combobox(d_wrap, textvariable=vars_["wolse_deposit_che"], values=che_options, state="readonly", width=6).pack(side="left")
+        ttk.Combobox(d_wrap, textvariable=vars_["wolse_deposit_che"], values=che_options, state="normal", width=6).pack(side="left")
         ttk.Label(d_wrap, text="천만원").pack(side="left", padx=2)
 
         ttk.Label(s2, text="월세액(만원)").grid(row=5, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["wolse_rent_man"], values=man_options, state="readonly", width=16).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+        ttk.Combobox(s2, textvariable=vars_["wolse_rent_man"], values=man_options, state="normal", width=16).grid(row=5, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s2, text="만원 단위(직접 입력 가능)", foreground="#666").grid(row=5, column=2, padx=4, pady=8, sticky="w")
         ttk.Label(s2, text="선호 위치").grid(row=6, column=0, padx=6, pady=8, sticky="e")
         ttk.Entry(s2, textvariable=vars_["location_preference"], width=32).grid(row=6, column=1, padx=6, pady=8, sticky="w")
 
@@ -1890,7 +1908,7 @@ class LedgerDesktopApp:
                     vars_["wolse_rent_man"].get(),
                 ]
                 if any(not _is_non_negative_int(n) for n in nums):
-                    messagebox.showwarning("입력 확인", "예산(억/천만원, 만원)은 숫자 선택만 가능합니다.")
+                    messagebox.showwarning("입력 확인", "예산(억/천만원, 만원)은 숫자만 입력해주세요.")
                     return False
                 return True
             if idx == 2:
@@ -2979,6 +2997,8 @@ class LedgerDesktopApp:
             for r in rows:
                 hay = " ".join([
                     str(r.get("complex_name") or ""),
+                    str(r.get("dong") or ""),
+                    str(r.get("ho") or ""),
                     str(r.get("address_detail") or ""),
                     str(r.get("owner_phone") or ""),
                     str(r.get("special_notes") or ""),
