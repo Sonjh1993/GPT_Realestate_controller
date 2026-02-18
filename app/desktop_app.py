@@ -13,7 +13,6 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, font as tkfont, messagebox, ttk
 
-from .matching import match_properties
 from .proposal import build_kakao_message, generate_proposal_pdf
 from .tasks_engine import reconcile_auto_tasks
 from .sheet_sync import SyncSettings, upload_visible_data
@@ -156,19 +155,16 @@ class LedgerDesktopApp:
         self.dashboard_tab = ttk.Frame(self.main)
         self.property_tab = ttk.Frame(self.main)
         self.customer_tab = ttk.Frame(self.main)
-        self.matching_tab = ttk.Frame(self.main)
         self.settings_tab = ttk.Frame(self.main)
 
         self.main.add(self.dashboard_tab, text="오늘")
         self.main.add(self.property_tab, text="물건")
         self.main.add(self.customer_tab, text="고객")
-        self.main.add(self.matching_tab, text="매칭")
         self.main.add(self.settings_tab, text="설정")
 
         self._build_dashboard_ui()
         self._build_property_ui()
         self._build_customer_ui()
-        self._build_matching_ui()
         self._build_settings_ui()
 
         self.refresh_all()
@@ -435,7 +431,9 @@ class LedgerDesktopApp:
         tid = self._selected_task_id()
         if tid is None:
             return
-        self.complete_task_and_handoff(tid)
+        mark_task_done(tid)
+        self.refresh_tasks()
+        self.refresh_dashboard()
 
     def _task_handoff_options(self, title: str) -> list[str]:
         t = (title or "").strip()
@@ -516,7 +514,7 @@ class LedgerDesktopApp:
                 tree.heading(c, text=c)
             tree.pack(fill="both", expand=True, padx=8, pady=8)
             for r in rows:
-                tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
+                tree.insert("", "end", iid=str(r.get("id")), values=(fmt_phone(r.get("phone")), r.get("customer_name"), r.get("status") or ""))
             def done():
                 sel = tree.selection()
                 if sel:
@@ -906,9 +904,9 @@ class LedgerDesktopApp:
             popup.title("고객 선택")
             search_var = tk.StringVar(value="")
             ttk.Entry(popup, textvariable=search_var, width=36).pack(padx=8, pady=4, anchor="w")
-            tree = ttk.Treeview(popup, columns=("name", "phone", "status"), show="headings")
-            tree.heading("name", text="이름")
+            tree = ttk.Treeview(popup, columns=("phone", "name", "status"), show="headings")
             tree.heading("phone", text="전화번호")
+            tree.heading("name", text="이름")
             tree.heading("status", text="상태")
             tree.pack(fill="both", expand=True, padx=8, pady=8)
 
@@ -922,7 +920,7 @@ class LedgerDesktopApp:
                     hay = f"{r.get('customer_name','')} {r.get('phone','')}".lower()
                     if q and q.lower() not in hay and (not qd or qd not in phone):
                         continue
-                    tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
+                    tree.insert("", "end", iid=str(r.get("id")), values=(fmt_phone(r.get("phone")), r.get("customer_name"), r.get("status") or ""))
 
             search_var.trace_add("write", lambda *_: render())
             render()
@@ -998,6 +996,8 @@ class LedgerDesktopApp:
         ttk.Button(top, text="+ 물건 등록", command=self.open_property_wizard).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="내보내기/동기화", command=self.export_sync).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="숨김함", command=self.open_hidden_properties_window).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="제안서 PDF(선택1)", command=lambda: self._generate_proposal_from_property_tab()).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="제안문구 복사(선택1)", command=lambda: self._copy_message_from_property_tab()).pack(side="left", padx=4, pady=6)
 
         ttk.Label(top, text="검색").pack(side="left", padx=(24, 4))
         self.property_search_var = tk.StringVar(value="")
@@ -1009,7 +1009,7 @@ class LedgerDesktopApp:
         self.inner_tabs.pack(fill="both", expand=True, padx=10, pady=8)
         self.prop_trees: dict[str, ttk.Treeview] = {}
 
-        cols = ("status", "complex_name", "address_detail", "unit_type", "floor", "price_summary", "updated_at", "id")
+        cols = ("status", "complex_name", "address_detail", "unit_type", "floor", "price_summary", "updated_at")
         col_defs = [
             ("status", 90),
             ("complex_name", 180),
@@ -1018,7 +1018,6 @@ class LedgerDesktopApp:
             ("floor", 70),
             ("price_summary", 250),
             ("updated_at", 145),
-            ("id", 1),
         ]
         col_labels = {
             "status": "상태",
@@ -1028,7 +1027,6 @@ class LedgerDesktopApp:
             "floor": "층",
             "price_summary": "가격요약",
             "updated_at": "업데이트",
-            "id": "",
         }
 
         for tab_name in PROPERTY_TABS:
@@ -1038,9 +1036,7 @@ class LedgerDesktopApp:
             tree = ttk.Treeview(frame, columns=cols, show="headings", height=17)
             for c, w in col_defs:
                 tree.heading(c, text=col_labels.get(c, c), command=lambda col=c, t=tree: self.sort_tree(t, col))
-                tree.column(c, width=w, stretch=(c != "id"))
-                if c == "id":
-                    tree.column(c, minwidth=0, width=0, stretch=False)
+                tree.column(c, width=w, stretch=True)
             tree.pack(fill="both", expand=True)
             xsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
             tree.configure(xscrollcommand=xsb.set)
@@ -1083,6 +1079,37 @@ class LedgerDesktopApp:
     def _calc_price_summary(self, row: dict) -> str:
         return money_utils.property_price_summary(row)
 
+    def _get_selected_property_id(self, tab_name: str) -> int | None:
+        tree = self.prop_trees.get(tab_name)
+        if not tree:
+            return None
+        sel = tree.selection()
+        if not sel:
+            return None
+        if len(sel) > 1:
+            messagebox.showwarning("확인", "현재는 1개씩만 제안서 생성 가능합니다")
+            return None
+        try:
+            return int(sel[0])
+        except Exception:
+            return None
+
+    def _generate_proposal_from_property_tab(self):
+        tab = self.inner_tabs.tab(self.inner_tabs.select(), "text")
+        pid = self._get_selected_property_id(tab)
+        if pid is None:
+            messagebox.showwarning("확인", "물건 1개를 선택하세요")
+            return
+        self.generate_proposal_for_property(pid)
+
+    def _copy_message_from_property_tab(self):
+        tab = self.inner_tabs.tab(self.inner_tabs.select(), "text")
+        pid = self._get_selected_property_id(tab)
+        if pid is None:
+            messagebox.showwarning("확인", "물건 1개를 선택하세요")
+            return
+        self.copy_message_for_property(pid)
+
     def refresh_properties(self):
         q = self.property_search_var.get().strip().lower() if hasattr(self, "property_search_var") else ""
         for tab in PROPERTY_TABS:
@@ -1101,6 +1128,7 @@ class LedgerDesktopApp:
                 tree.insert(
                     "",
                     "end",
+                    iid=str(row.get("id")),
                     values=(
                         row.get("status"),
                         row.get("complex_name"),
@@ -1109,7 +1137,6 @@ class LedgerDesktopApp:
                         row.get("floor"),
                         self._calc_price_summary(row),
                         row.get("updated_at"),
-                        row.get("id"),
                     ),
                 )
 
@@ -1451,6 +1478,10 @@ class LedgerDesktopApp:
         if not selected:
             return None
         try:
+            return int(selected[0])
+        except Exception:
+            pass
+        try:
             values = list(tree.item(selected[0], "values"))
             if not values:
                 return None
@@ -1492,20 +1523,20 @@ class LedgerDesktopApp:
         win = tk.Toplevel(self.root)
         win.title("물건 숨김함")
         self._fit_toplevel(win, 760, 560)
-        tree = ttk.Treeview(win, columns=("id", "tab", "address"), show="headings", height=14)
-        for c in ("id", "tab", "address"):
-            tree.heading(c, text=c)
+        tree = ttk.Treeview(win, columns=("tab", "address"), show="headings", height=14)
+        tree.heading("tab", text="구분")
+        tree.heading("address", text="동/호")
         tree.pack(fill="both", expand=True, padx=8, pady=8)
         hidden_rows = [r for r in list_properties(include_deleted=False) if r.get("hidden")]
         for r in hidden_rows:
-            tree.insert("", "end", values=(r.get("id"), r.get("tab"), r.get("address_detail")))
+            tree.insert("", "end", iid=str(r.get("id")), values=(r.get("tab"), r.get("address_detail")))
 
         def _selected_id():
             sel = tree.selection()
             if not sel:
                 return None
             try:
-                return int(tree.item(sel[0], "values")[0])
+                return int(sel[0])
             except Exception:
                 return None
 
@@ -1608,9 +1639,8 @@ class LedgerDesktopApp:
         ent.bind("<Return>", lambda _e: self.refresh_customers())
         ttk.Button(top, text="초기화", command=lambda: (self.customer_phone_query.set(""), self.customer_deal_filter_var.set("전체"), self.refresh_customers())).pack(side="left", padx=4)
 
-        cols = ("id", "customer_name", "phone", "preferred_tab", "deal_type", "budget", "size", "move_in", "floor_preference", "status", "updated_at")
+        cols = ("customer_name", "phone", "preferred_tab", "deal_type", "budget", "size", "move_in", "floor_preference", "status", "updated_at")
         col_defs = [
-            ("id", 55),
             ("customer_name", 110),
             ("phone", 120),
             ("preferred_tab", 170),
@@ -1623,7 +1653,6 @@ class LedgerDesktopApp:
             ("updated_at", 150),
         ]
         col_labels = {
-            "id": "",
             "customer_name": "고객명",
             "phone": "전화번호",
             "preferred_tab": "희망유형",
@@ -1646,9 +1675,7 @@ class LedgerDesktopApp:
             tree = ttk.Treeview(frame, columns=cols, show="headings", height=22)
             for c, w in col_defs:
                 tree.heading(c, text=col_labels.get(c, c))
-                tree.column(c, width=w, stretch=(c != "id"))
-                if c == "id":
-                    tree.column(c, minwidth=0, width=0, stretch=False)
+                tree.column(c, width=w, stretch=True)
             tree.pack(fill="both", expand=True)
             c_x = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
             tree.configure(xscrollcommand=c_x.set)
@@ -1897,11 +1924,11 @@ class LedgerDesktopApp:
             elif row.get("preferred_pyeong"):
                 size = f"{row.get('preferred_pyeong')} 평"
 
+            shown_tab_text = row.get("preferred_tab") or ""
             values = (
-                row.get("id"),
                 row.get("customer_name"),
-                row.get("phone"),
-                row.get("preferred_tab") or "",
+                fmt_phone(row.get("phone")),
+                shown_tab_text,
                 row.get("deal_type") or "",
                 row.get("budget") or "",
                 size,
@@ -1911,28 +1938,27 @@ class LedgerDesktopApp:
                 row.get("updated_at"),
             )
 
-            # 전체 탭
             if "전체" in self.customer_trees:
-                self.customer_trees["전체"].insert("", "end", values=values)
+                self.customer_trees["전체"].insert("", "end", iid=str(row.get("id")), values=values)
 
             pref_tabs = {self._normalize_property_tab(t) for t in self._parse_preferred_tabs(str(row.get("preferred_tab") or ""))}
             for tab_name in PROPERTY_TABS:
                 norm_tab = self._normalize_property_tab(tab_name)
                 if norm_tab in pref_tabs and tab_name in self.customer_trees:
                     tab_values = list(values)
-                    tab_values[3] = tab_name  # 탭별 리스트에서는 현재 탭명만 표시
-                    self.customer_trees[tab_name].insert("", "end", values=tuple(tab_values))
+                    tab_values[2] = tab_name
+                    self.customer_trees[tab_name].insert("", "end", iid=str(row.get("id")), values=tuple(tab_values))
 
 
     def toggle_selected_customer(self):
-        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree())
         if cid is None:
             return
         toggle_customer_hidden(cid)
         self.refresh_all()
     
     def delete_selected_customer(self):
-        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree())
         if cid is None:
             return
         if messagebox.askyesno("확인", "해당 고객 요청을 삭제 처리(복구 가능)할까요?"):
@@ -1940,7 +1966,7 @@ class LedgerDesktopApp:
             self.refresh_all()
     
     def open_selected_customer_detail(self):
-        cid = self._selected_id_from_tree(self._current_customer_tree(), value_index=0)
+        cid = self._selected_id_from_tree(self._current_customer_tree())
         if cid is None:
             return
         self.open_customer_detail(cid)
@@ -1970,14 +1996,14 @@ class LedgerDesktopApp:
         tree.pack(fill="both", expand=True, padx=8, pady=8)
         hidden_rows = [r for r in list_customers(include_deleted=False) if r.get("hidden")]
         for r in hidden_rows:
-            tree.insert("", "end", iid=str(r.get("id")), values=(r.get("customer_name"), fmt_phone(r.get("phone")), r.get("status") or ""))
+            tree.insert("", "end", iid=str(r.get("id")), values=(fmt_phone(r.get("phone")), r.get("customer_name"), r.get("status") or ""))
 
         def _selected_id():
             sel = tree.selection()
             if not sel:
                 return None
             try:
-                return int(tree.item(sel[0], "values")[0])
+                return int(sel[0])
             except Exception:
                 return None
 
@@ -2009,200 +2035,6 @@ class LedgerDesktopApp:
         ttk.Button(btns, text="상세", command=open_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=delete_it).pack(side="left", padx=4)
 
-    def _build_matching_ui(self):
-        top = ttk.LabelFrame(self.matching_tab, text="고객 → 물건 매칭(규칙 기반)")
-        top.pack(fill="x", padx=10, pady=10)
-
-        ttk.Label(top, text="고객 선택").grid(row=0, column=0, padx=6, pady=6, sticky="e")
-        self.match_customer_var = tk.StringVar()
-        self.match_customer_combo = ttk.Combobox(top, textvariable=self.match_customer_var, values=[], width=50, state="readonly")
-        self.match_customer_combo.grid(row=0, column=1, padx=6, pady=6, sticky="w")
-        ttk.Button(top, text="새로고침", command=self.refresh_matching_customers).grid(row=0, column=2, padx=6, pady=6)
-        ttk.Button(top, text="추천 생성", command=self.run_matching).grid(row=0, column=3, padx=6, pady=6)
-        ttk.Button(top, text="제안서 PDF(선택/상위)", command=self.generate_proposal_from_matching).grid(row=0, column=4, padx=6, pady=6)
-        ttk.Button(top, text="제안문구 복사", command=self.copy_message_from_matching).grid(row=0, column=5, padx=6, pady=6)
-        ttk.Button(top, text="제안서 폴더", command=self.open_proposals_folder).grid(row=0, column=6, padx=6, pady=6)
-
-        bottom = ttk.Frame(self.matching_tab)
-        bottom.pack(fill="both", expand=True, padx=10, pady=10)
-
-        cols = ("score", "summary", "deal", "reasons", "property_id")
-        self.match_tree = ttk.Treeview(bottom, columns=cols, show="headings", height=22, selectmode="extended")
-        col_defs = [("score", 70), ("summary", 300), ("deal", 180), ("reasons", 380), ("property_id", 0)]
-        for c, w in col_defs:
-            self.match_tree.heading(c, text=c)
-            self.match_tree.column(c, width=w)
-        self.match_tree.pack(fill="both", expand=True)
-        self.match_tree.bind("<Double-1>", self._on_double_click_match)
-
-        self.refresh_matching_customers()
-    
-    def refresh_matching_customers(self):
-        rows = [r for r in list_customers() if not r.get("hidden") and not r.get("deleted")]
-        values = [f"{r['id']} | {r.get('customer_name','')} | {r.get('phone','')}" for r in rows]
-        self._match_customer_index = {values[i]: rows[i]["id"] for i in range(len(values))}
-        self.match_customer_combo.configure(values=values)
-        if values and not self.match_customer_var.get():
-            self.match_customer_var.set(values[0])
-    
-    def run_matching(self):
-        key = self.match_customer_var.get()
-        if not key:
-            return
-        cid = self._match_customer_index.get(key)
-        if not cid:
-            return
-        customer = get_customer(cid)
-        if not customer:
-            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
-            return
-
-        props = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
-        results = match_properties(customer, props, limit=60)
-
-        for i in self.match_tree.get_children():
-            self.match_tree.delete(i)
-        for r in results:
-            p = r.property_row
-            self.match_tree.insert(
-                "",
-                "end",
-                values=(
-                    r.score,
-                    f"{p.get('tab','')} / {p.get('address_detail','')} / {p.get('unit_type','')}",
-                    money_utils.property_price_summary(p) or p.get("status", ""),
-                    " / ".join(r.reasons[:2]),
-                    p.get("id"),
-                ),
-            )
-    
-    def _on_double_click_match(self, _event):
-        selected = self.match_tree.selection()
-        if not selected:
-            return
-        try:
-            pid = int(self.match_tree.item(selected[0], "values")[4])
-        except Exception:
-            return
-        self.open_property_detail(pid)
-
-
-    def _get_current_matching_customer(self) -> dict | None:
-        key = self.match_customer_var.get()
-        if not key:
-            return None
-        cid = getattr(self, "_match_customer_index", {}).get(key)
-        if not cid:
-            return None
-        return get_customer(int(cid))
-
-    def _get_selected_match_property_ids(self, *, fallback_top_n: int = 5) -> list[int]:
-        ids: list[int] = []
-        for item in self.match_tree.selection():
-            try:
-                pid = int(self.match_tree.item(item, "values")[4])
-                ids.append(pid)
-            except Exception:
-                continue
-        if ids:
-            return ids
-    
-        # fallback: first N rows in the tree
-        for item in self.match_tree.get_children()[:fallback_top_n]:
-            try:
-                pid = int(self.match_tree.item(item, "values")[4])
-                ids.append(pid)
-            except Exception:
-                continue
-        return ids
-
-    def _ranked_photos_for_property(self, property_id: int) -> list[dict[str, str]]:
-        priority = ["거실", "안방", "작은방", "화장실", "주방", "현관", "뷰", "기타"]
-        rank = {name: i for i, name in enumerate(priority)}
-        rows = [
-            {"file_path": str(r.get("file_path") or ""), "tag": str(r.get("tag") or "")}
-            for r in list_photos(property_id)
-            if r.get("file_path")
-        ]
-        rows.sort(key=lambda x: (rank.get(x.get("tag", ""), 99), x.get("tag", "")))
-        return rows
-
-    def open_proposals_folder(self):
-        self.settings = self._load_settings()
-        out_dir = self.settings.sync_dir / "exports" / "proposals"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        _open_folder(out_dir)
-
-    def generate_proposal_from_matching(self):
-        customer = self._get_current_matching_customer()
-        if not customer:
-            messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
-            return
-    
-        pids = self._get_selected_match_property_ids(fallback_top_n=5)
-        if not pids:
-            messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
-            return
-    
-        props: list[dict] = []
-        photos_by_property: dict[int, list[dict[str, str]]] = {}
-    
-        for pid in pids:
-            row = get_property(pid)
-            if not row:
-                continue
-            props.append(row)
-            photos_by_property[pid] = self._ranked_photos_for_property(pid)
-    
-        self.settings = self._load_settings()
-        out_dir = self.settings.sync_dir / "exports" / "proposals"
-    
-        try:
-            out = generate_proposal_pdf(
-                customer=customer,
-                properties=props,
-                photos_by_property=photos_by_property,
-                output_dir=out_dir,
-                title="매물 제안서",
-            )
-        except Exception as exc:
-            messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
-            return
-    
-        messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
-        try:
-            _open_folder(out_dir)
-        except Exception:
-            pass
-
-    def copy_message_from_matching(self):
-        customer = self._get_current_matching_customer()
-        if not customer:
-            messagebox.showwarning("확인", "고객을 먼저 선택해주세요.")
-            return
-    
-        pids = self._get_selected_match_property_ids(fallback_top_n=5)
-        if not pids:
-            messagebox.showwarning("확인", "추천 결과가 없습니다. 먼저 '추천 생성'을 눌러주세요.")
-            return
-    
-        props: list[dict] = []
-        for pid in pids:
-            row = get_property(pid)
-            if row:
-                props.append(row)
-    
-        msg = build_kakao_message(customer, props, include_links=True)
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(msg)
-            messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
-        except Exception as exc:
-            messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
-    
-        # -----------------
-        # Settings tab
-        # -----------------
     def _build_settings_ui(self):
         box = ttk.LabelFrame(self.settings_tab, text="동기화 설정(관리자)")
         box.pack(fill="x", padx=10, pady=10)
@@ -2808,21 +2640,8 @@ class LedgerDesktopApp:
         ttk.Button(actions, text="저장", command=save_changes).pack(side="left", padx=4)
         ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
         ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
-        ttk.Button(actions, text="매칭 보기", command=lambda: self._open_matching_for_customer(customer_id)).pack(side="left", padx=4)
-        ttk.Button(actions, text="제안서 PDF(상위5)", command=lambda: self.generate_proposal_for_customer(customer_id, top_n=5)).pack(side="left", padx=4)
-        ttk.Button(actions, text="제안문구 복사(상위5)", command=lambda: self.copy_message_for_customer(customer_id, top_n=5)).pack(side="left", padx=4)
-    
-    def _open_matching_for_customer(self, customer_id: int):
-        # 매칭 탭으로 전환하고 고객 선택
-        self.main.select(self.matching_tab)
-        self.refresh_matching_customers()
-        # combobox value 찾아서 set
-        for label, cid in getattr(self, "_match_customer_index", {}).items():
-            if cid == customer_id:
-                self.match_customer_var.set(label)
-                break
-        self.run_matching()
-
+        ttk.Button(actions, text="매물 선택 → 제안서 PDF", command=lambda: self._generate_customer_proposal_by_pick(customer_id, parent=win)).pack(side="left", padx=4)
+        ttk.Button(actions, text="매물 선택 → 제안문구 복사", command=lambda: self._copy_customer_message_by_pick(customer_id, parent=win)).pack(side="left", padx=4)
 
     def _open_related_navigation_popup(self, *, title: str, customers: list[int] | None = None, properties: list[int] | None = None):
         customers = customers or []
@@ -2834,73 +2653,131 @@ class LedgerDesktopApp:
         win.title(title)
         self._fit_toplevel(win, 620, 460)
 
-        tree = ttk.Treeview(win, columns=("type", "id", "name"), show="headings")
+        tree = ttk.Treeview(win, columns=("type", "name"), show="headings")
         tree.heading("type", text="유형")
-        tree.heading("id", text="ID")
-        tree.heading("name", text="이름/주소")
+        tree.heading("name", text="대상")
         tree.column("type", width=100, anchor="center")
-        tree.column("id", width=80, anchor="center")
-        tree.column("name", width=300)
+        tree.column("name", width=380)
         tree.pack(fill="both", expand=True, padx=10, pady=10)
 
         for cid in customers:
             c = get_customer(cid)
-            tree.insert("", "end", values=("고객", cid, str((c or {}).get("customer_name") or f"고객 {cid}")))
+            tree.insert("", "end", iid=f"C:{cid}", values=("고객", customer_label(c or {})))
         for pid in properties:
             p = get_property(pid)
-            name = f"{(p or {}).get('complex_name','')} {(p or {}).get('address_detail','')}".strip()
-            tree.insert("", "end", values=("물건", pid, name or f"물건 {pid}"))
+            tree.insert("", "end", iid=f"P:{pid}", values=("물건", property_label(p or {})))
 
         def open_selected():
             sel = tree.selection()
             if not sel:
                 return
-            t, sid, _ = tree.item(sel[0], "values")
-            try:
-                sid_i = int(sid)
-            except Exception:
-                return
-            if t == "고객":
-                self.open_customer_detail(sid_i)
-            else:
-                self.open_property_detail(sid_i)
+            iid = str(sel[0])
+            if iid.startswith("C:"):
+                self.open_customer_detail(int(iid.split(":", 1)[1]))
+            elif iid.startswith("P:"):
+                self.open_property_detail(int(iid.split(":", 1)[1]))
 
         tree.bind("<Double-1>", lambda _e: open_selected())
         ttk.Button(win, text="열기", command=open_selected).pack(pady=6)
-
-    def _top_matches_for_customer(self, customer_id: int, top_n: int = 5) -> tuple[dict | None, list[dict]]:
-        customer = get_customer(customer_id)
-        if not customer:
-            return None, []
-        props = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
-        results = match_properties(customer, props, limit=max(1, int(top_n)))
-        matched = [r.property_row for r in results]
-        return customer, matched
-
-    def generate_proposal_for_customer(self, customer_id: int, top_n: int = 5):
-        customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
-        if not customer:
-            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
-            return
-        if not props:
-            messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
-            return
     
-        photos_by_property: dict[int, list[dict[str, str]]] = {}
-        for p in props:
+    def _pick_one_property_popup(self, parent) -> int | None:
+        rows = [p for p in list_properties(include_deleted=False) if not p.get("hidden")]
+        if not rows:
+            messagebox.showwarning("안내", "선택할 물건이 없습니다.", parent=parent)
+            return None
+
+        popup = tk.Toplevel(parent)
+        popup.title("물건 선택")
+        self._fit_toplevel(popup, 900, 620)
+
+        search_var = tk.StringVar(value="")
+        ttk.Entry(popup, textvariable=search_var, width=44).pack(padx=10, pady=6, anchor="w")
+
+        tree = ttk.Treeview(popup, columns=("complex", "dongho", "type", "price"), show="headings", height=18)
+        tree.heading("complex", text="단지")
+        tree.heading("dongho", text="동/호")
+        tree.heading("type", text="타입/평형")
+        tree.heading("price", text="가격요약")
+        tree.column("complex", width=220)
+        tree.column("dongho", width=220)
+        tree.column("type", width=170)
+        tree.column("price", width=220)
+        tree.pack(fill="both", expand=True, padx=10, pady=8)
+
+        def render():
+            q = search_var.get().strip().lower()
+            qd = "".join(ch for ch in q if ch.isdigit())
+            for item in tree.get_children():
+                tree.delete(item)
+            for r in rows:
+                hay = " ".join([
+                    str(r.get("complex_name") or ""),
+                    str(r.get("address_detail") or ""),
+                    str(r.get("owner_phone") or ""),
+                    str(r.get("special_notes") or ""),
+                ]).lower()
+                hnum = "".join(ch for ch in str(r.get("owner_phone") or "") if ch.isdigit())
+                if q and q not in hay and (not qd or qd not in hnum):
+                    continue
+                unit = str(r.get("unit_type") or "").strip()
+                pyeong = str(r.get("pyeong") or "").strip()
+                type_text = f"{unit} {pyeong}평".strip()
+                tree.insert(
+                    "",
+                    "end",
+                    iid=str(r.get("id")),
+                    values=(
+                        r.get("complex_name") or "",
+                        str(r.get("address_detail") or "").strip() or property_label(r),
+                        type_text,
+                        self._calc_price_summary(r),
+                    ),
+                )
+
+        selected: dict[str, int | None] = {"pid": None}
+
+        def done():
+            sel = tree.selection()
+            if not sel:
+                messagebox.showwarning("확인", "물건 1개를 선택하세요", parent=popup)
+                return
             try:
-                pid = int(p.get("id"))
+                selected["pid"] = int(sel[0])
             except Exception:
-                continue
-            photos_by_property[pid] = self._ranked_photos_for_property(pid)
-    
+                selected["pid"] = None
+            popup.destroy()
+
+        tree.bind("<Double-1>", lambda _e: done())
+        search_var.trace_add("write", lambda *_: render())
+        render()
+
+        btns = ttk.Frame(popup)
+        btns.pack(fill="x", padx=10, pady=8)
+        ttk.Button(btns, text="선택", command=done).pack(side="right")
+        ttk.Button(btns, text="취소", command=popup.destroy).pack(side="right", padx=4)
+        popup.grab_set()
+        popup.wait_window()
+        return selected["pid"]
+
+    def generate_proposal_for_property(self, property_id: int, customer: dict | None = None) -> None:
+        row = get_property(property_id)
+        if not row:
+            messagebox.showerror("오류", "물건 정보를 찾을 수 없습니다.")
+            return
+        customer = customer or {
+            "customer_name": "",
+            "phone": "",
+            "deal_type": "",
+            "preferred_tab": "",
+            "budget": "",
+        }
+        photos_by_property = {property_id: self._ranked_photos_for_property(property_id)}
         self.settings = self._load_settings()
         out_dir = self.settings.sync_dir / "exports" / "proposals"
-    
         try:
             out = generate_proposal_pdf(
                 customer=customer,
-                properties=props,
+                properties=[row],
                 photos_by_property=photos_by_property,
                 output_dir=out_dir,
                 title="매물 제안서",
@@ -2908,30 +2785,43 @@ class LedgerDesktopApp:
         except Exception as exc:
             messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
             return
-    
         messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
-        try:
-            _open_folder(out_dir)
-        except Exception:
-            pass
+        _open_folder(out_dir)
 
-    def copy_message_for_customer(self, customer_id: int, top_n: int = 5):
-        customer, props = self._top_matches_for_customer(customer_id, top_n=top_n)
-        if not customer:
-            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
+    def copy_message_for_property(self, property_id: int, customer: dict | None = None) -> None:
+        row = get_property(property_id)
+        if not row:
+            messagebox.showerror("오류", "물건 정보를 찾을 수 없습니다.")
             return
-        if not props:
-            messagebox.showwarning("안내", "추천할 물건이 없습니다. 고객 조건을 조금 완화하거나 물건을 추가해 주세요.")
-            return
-    
-        msg = build_kakao_message(customer, props, include_links=True)
+        customer = customer or {"customer_name": "고객", "phone": "", "deal_type": ""}
+        msg = build_kakao_message(customer, [row], include_links=True)
         try:
             self.root.clipboard_clear()
             self.root.clipboard_append(msg)
             messagebox.showinfo("복사 완료", "제안문구를 클립보드에 복사했습니다. (카톡/문자에 붙여넣기)")
         except Exception as exc:
             messagebox.showerror("오류", f"클립보드 복사 실패: {exc}")
-    
+
+    def _generate_customer_proposal_by_pick(self, customer_id: int, *, parent=None):
+        customer = get_customer(customer_id)
+        if not customer:
+            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
+            return
+        pid = self._pick_one_property_popup(parent or self.root)
+        if pid is None:
+            return
+        self.generate_proposal_for_property(pid, customer=customer)
+
+    def _copy_customer_message_by_pick(self, customer_id: int, *, parent=None):
+        customer = get_customer(customer_id)
+        if not customer:
+            messagebox.showerror("오류", "고객 정보를 찾을 수 없습니다.")
+            return
+        pid = self._pick_one_property_popup(parent or self.root)
+        if pid is None:
+            return
+        self.copy_message_for_property(pid, customer=customer)
+
     def _on_double_click_viewing(self, _event):
         # 현재는 별도 상세창은 생략(필요하면 확장)
         pass
@@ -2950,7 +2840,6 @@ class LedgerDesktopApp:
         self.refresh_customers()
         self.refresh_tasks()
         self.refresh_dashboard()
-        self.refresh_matching_customers()
 
 
 def run_desktop_app():

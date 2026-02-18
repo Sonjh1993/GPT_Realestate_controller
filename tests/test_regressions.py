@@ -17,7 +17,6 @@ class DesktopAppStructureTests(unittest.TestCase):
             "refresh_tasks",
             "_build_property_ui",
             "_build_customer_ui",
-            "_build_matching_ui",
             "_build_settings_ui",
             "export_sync",
             "open_export_folder",
