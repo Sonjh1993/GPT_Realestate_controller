@@ -166,8 +166,8 @@ class LedgerDesktopApp:
 
         status_bar = ttk.Frame(root)
         status_bar.pack(fill="x", padx=10, pady=(8, 2))
-        ttk.Label(status_bar, textvariable=self.current_customer_var).pack(side="left", padx=(0, 16))
-        ttk.Label(status_bar, textvariable=self.current_property_var).pack(side="left")
+        ttk.Label(status_bar, textvariable=self.current_customer_var, style="Muted.TLabel").pack(side="left", padx=(0, 16))
+        ttk.Label(status_bar, textvariable=self.current_property_var, style="Muted.TLabel").pack(side="left")
 
         self.main = ttk.Notebook(root)
         self.main.pack(fill="both", expand=True)
