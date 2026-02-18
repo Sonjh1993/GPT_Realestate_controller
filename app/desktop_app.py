@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
+from tkinter import filedialog, font as tkfont, messagebox, ttk
 
 from .proposal import generate_proposal_pdf
 from .tasks_engine import reconcile_auto_tasks
@@ -41,7 +41,6 @@ from .storage import (
     list_photos_all,
     list_properties,
     list_viewings,
-    list_presets,
     set_setting,
     soft_delete_customer,
     soft_delete_property,
@@ -51,8 +50,6 @@ from .storage import (
     toggle_property_hidden,
     update_customer,
     update_property,
-    upsert_preset,
-    delete_preset,
     update_viewing_status,
     add_task,
     delete_task,
@@ -163,7 +160,6 @@ class LedgerDesktopApp:
         self.current_customer_var = tk.StringVar(value="현재 고객: 미선택")
         self.current_property_var = tk.StringVar(value="현재 매물: 미선택")
         self._last_undo_payload: dict | None = None
-        self._preset_buttons: dict[int, ttk.Button] = {}
 
         init_db()
         self.settings = self._load_settings()
@@ -193,7 +189,6 @@ class LedgerDesktopApp:
 
         self._bind_global_shortcuts()
         self.refresh_all()
-        self._refresh_preset_buttons()
         self.start_auto_sync_loop()
 
     def _apply_ui_scale(self, scale: float = 1.25) -> None:
@@ -218,13 +213,13 @@ class LedgerDesktopApp:
             pass
 
         self.palette = {
-            "bg": "#F7F9FC",
+            "bg": "#F8FAFC",
             "panel": "#FFFFFF",
-            "text": "#1F2937",
+            "text": "#111827",
             "muted": "#6B7280",
-            "border": "#D7DFEA",
-            "accent": "#2F6FEB",
-            "danger": "#C24141",
+            "border": "#CBD5E1",
+            "accent": "#2563EB",
+            "danger": "#B91C1C",
         }
 
         style = ttk.Style(self.root)
@@ -245,18 +240,18 @@ class LedgerDesktopApp:
         style.map("Secondary.TButton", background=[("active", "#F0F4FA")])
         style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["accent"], foreground="#FFFFFF", bordercolor=self.palette["accent"])
         style.map("Primary.TButton", background=[("active", "#285FD0")])
-        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background="#FBECEC", foreground=self.palette["danger"], bordercolor="#F0BDBD")
-        style.map("Danger.TButton", background=[("active", "#F6DDDD")])
+        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background="#FEE2E2", foreground=self.palette["danger"], bordercolor="#FCA5A5")
+        style.map("Danger.TButton", background=[("active", "#FECACA")])
 
         style.configure("TEntry", fieldbackground=self.palette["panel"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
-        style.configure("TCombobox", fieldbackground=self.palette["panel"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
-        style.map("TCombobox", bordercolor=[("focus", self.palette["accent"])])
+        style.configure("TCombobox", fieldbackground="#FFFFFF", background="#FFFFFF", bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"], arrowsize=14)
+        style.map("TCombobox", bordercolor=[("focus", self.palette["accent"])], fieldbackground=[("readonly", "#FFFFFF"), ("!disabled", "#FFFFFF")], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", "#DBEAFE")], selectforeground=[("readonly", self.palette["text"])])
         style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
 
-        style.configure("TNotebook", background=self.palette["bg"], borderwidth=0)
-        style.configure("TNotebook.Tab", font=(family, base_size), padding=(12, 7), background="#ECF1F8", foreground=self.palette["muted"])
-        style.map("TNotebook.Tab", background=[("selected", self.palette["panel"])], foreground=[("selected", self.palette["text"])])
+        style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
+        style.configure("TNotebook.Tab", font=(family, base_size), padding=(12, 6), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0)
+        style.map("TNotebook.Tab", background=[("selected", self.palette["bg"])], foreground=[("selected", self.palette["text"])])
 
         style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["panel"], fieldbackground=self.palette["panel"], foreground=self.palette["text"], bordercolor=self.palette["border"])
         style.configure("Treeview.Heading", font=(family, base_size, "bold"), background="#EEF3FA", foreground=self.palette["text"], relief="flat")
@@ -1370,15 +1365,6 @@ class LedgerDesktopApp:
         self.undo_btn = ttk.Button(top, text="Undo", style="Secondary.TButton", command=self._undo_last_action, state="disabled")
         self.undo_btn.pack(side="left", padx=4, pady=6)
 
-        preset_wrap = ttk.Frame(top)
-        preset_wrap.pack(side="left", padx=(10, 4))
-        ttk.Label(preset_wrap, text="프리셋").pack(side="left", padx=(0, 4))
-        for slot in range(1, 6):
-            btn = ttk.Button(preset_wrap, text=f"P{slot}", command=lambda s=slot: self._apply_preset(s))
-            btn.pack(side="left", padx=2)
-            btn.bind("<Button-3>", lambda e, s=slot: self._open_preset_menu(e, s))
-            self._preset_buttons[slot] = btn
-
         ttk.Label(top, text="거래유형").pack(side="left", padx=(16, 4))
         for deal in ["매매", "전세", "월세"]:
             var = tk.BooleanVar(value=True)
@@ -1576,55 +1562,6 @@ class LedgerDesktopApp:
         current_tab = self.inner_tabs.tab(self.inner_tabs.select(), "text") if hasattr(self, "inner_tabs") else PROPERTY_TABS[0]
         self.property_search_var.set(self.property_search_terms_by_tab.get(current_tab, ""))
         self.refresh_properties()
-
-    def _preset_payload(self) -> dict:
-        current_tab = self.inner_tabs.tab(self.inner_tabs.select(), "text") if hasattr(self, "inner_tabs") else PROPERTY_TABS[0]
-        return {
-            "tab": current_tab,
-            "search_by_tab": dict(self.property_search_terms_by_tab),
-            "deals": {k: bool(v.get()) for k, v in self.property_deal_filter_vars.items()},
-        }
-
-    def _refresh_preset_buttons(self):
-        presets = {int(r.get("slot")): r for r in list_presets()}
-        for slot, btn in self._preset_buttons.items():
-            row = presets.get(slot)
-            btn.configure(text=(str(row.get("name") or f"P{slot}") if row else f"P{slot}"))
-
-    def _save_preset_slot(self, slot: int, *, rename_only: bool = False):
-        existing = next((r for r in list_presets() if int(r.get("slot")) == int(slot)), None)
-        default_name = str(existing.get("name") if existing else f"P{slot}")
-        name = simpledialog.askstring("프리셋", "프리셋 이름", initialvalue=default_name, parent=self.root)
-        if not name:
-            return
-        payload = json.loads(existing.get("payload_json") or "{}") if (rename_only and existing) else self._preset_payload()
-        upsert_preset(slot, name.strip(), payload)
-        self._refresh_preset_buttons()
-
-    def _apply_preset(self, slot: int):
-        row = next((r for r in list_presets() if int(r.get("slot")) == int(slot)), None)
-        if not row:
-            self._save_preset_slot(slot)
-            return
-        payload = json.loads(row.get("payload_json") or "{}")
-        for k, v in payload.get("deals", {}).items():
-            if k in self.property_deal_filter_vars:
-                self.property_deal_filter_vars[k].set(bool(v))
-        by_tab = payload.get("search_by_tab") or {}
-        for tab in PROPERTY_TABS:
-            self.property_search_terms_by_tab[tab] = str(by_tab.get(tab, ""))
-        tab = payload.get("tab")
-        if tab in PROPERTY_TABS and hasattr(self, "inner_tabs"):
-            self.inner_tabs.select(PROPERTY_TABS.index(tab))
-        self.property_search_var.set(self.property_search_terms_by_tab.get(self.inner_tabs.tab(self.inner_tabs.select(), "text"), ""))
-        self.refresh_properties()
-
-    def _open_preset_menu(self, event, slot: int):
-        menu = tk.Menu(self.root, tearoff=0)
-        menu.add_command(label="현재 상태 저장", command=lambda s=slot: self._save_preset_slot(s))
-        menu.add_command(label="이름 변경", command=lambda s=slot: self._save_preset_slot(s, rename_only=True))
-        menu.add_command(label="삭제", command=lambda s=slot: (delete_preset(s), self._refresh_preset_buttons()))
-        menu.tk_popup(event.x_root, event.y_root)
 
     def open_property_wizard(self):
         win = tk.Toplevel(self.root)
@@ -2851,8 +2788,9 @@ class LedgerDesktopApp:
 
         left = ttk.Frame(split, style="TFrame")
         right = ttk.Frame(split, style="TFrame")
-        split.add(left, weight=5)
-        split.add(right, weight=2)
+        split.add(left, weight=1)
+        split.add(right, weight=0)
+        right.configure(width=260)
 
         form = ttk.LabelFrame(left, text="물건 정보")
         form.pack(fill="both", expand=True)
@@ -2905,7 +2843,7 @@ class LedgerDesktopApp:
         notes_frame.rowconfigure(1, weight=1)
 
         side = ttk.LabelFrame(right, text="핵심 액션")
-        side.pack(fill="y", expand=False, anchor="n")
+        side.pack(fill="y", expand=True, anchor="n")
 
         def save_changes():
             vars_["special_notes"].set(special_txt.get("1.0", "end").strip())
@@ -2980,8 +2918,8 @@ class LedgerDesktopApp:
         ph_tree.pack(fill="both", expand=True)
         ph_tree.bind("<Double-1>", lambda _e: open_photo())
 
-        ph_controls = ttk.Frame(ph_box)
-        ph_controls.pack(fill="x", pady=6)
+        ph_controls = ttk.Frame(ph_box, style="TFrame")
+        ph_controls.pack(fill="x", pady=4)
         photo_tags = ["거실", "주방", "화장실", "방", "현관", "외관", "조망", "커뮤니티", "기타"]
         ph_tag_var = tk.StringVar(value="")
         ttk.Label(ph_controls, text="사진 구분").pack(side="left", padx=4)
@@ -3041,9 +2979,9 @@ class LedgerDesktopApp:
 
         ttk.Button(ph_controls, text="📷 사진등록", style="Primary.TButton", command=add_photo_ui).pack(side="left", padx=4)
         ttk.Button(ph_controls, text="사진 보기", style="Secondary.TButton", command=open_photo).pack(side="left", padx=4)
-        ttk.Button(ph_controls, text="폴더 열기", command=lambda: _open_folder(Path(ph_tree.item(ph_tree.selection()[0], "values")[2]).parent) if ph_tree.selection() else None).pack(side="left", padx=4)
+        ttk.Button(ph_controls, text="폴더 열기", style="Secondary.TButton", command=lambda: _open_folder(Path(ph_tree.item(ph_tree.selection()[0], "values")[2]).parent) if ph_tree.selection() else None).pack(side="left", padx=4)
         ttk.Button(ph_controls, text="🗑️ 기록 삭제", style="Danger.TButton", command=remove_photo).pack(side="left", padx=4)
-        ttk.Button(ph_controls, text="내보내기/동기화", command=self.export_sync).pack(side="right", padx=4)
+        ttk.Button(ph_controls, text="내보내기/동기화", style="Secondary.TButton", command=self.export_sync).pack(side="right", padx=4)
 
         refresh_photos()
 
@@ -3259,14 +3197,15 @@ class LedgerDesktopApp:
 
         wrapper = ttk.Frame(win)
         wrapper.pack(fill="both", expand=True, padx=10, pady=10)
-        wrapper.columnconfigure(0, weight=5)
-        wrapper.columnconfigure(1, weight=2)
+        wrapper.columnconfigure(0, weight=1)
+        wrapper.columnconfigure(1, weight=0, minsize=260)
         wrapper.rowconfigure(0, weight=1)
 
         left = ttk.LabelFrame(wrapper, text="고객 정보")
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         right = ttk.LabelFrame(wrapper, text="핵심 액션")
         right.grid(row=0, column=1, sticky="ns")
+        right.configure(width=260)
 
         fields = [
             ("고객명", "customer_name"), ("전화", "phone"), ("희망탭", "preferred_tab"),
