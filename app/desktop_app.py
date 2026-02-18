@@ -331,6 +331,147 @@ class LedgerDesktopApp:
         except Exception:
             pass
 
+    def _snapshot_tree_state(self, tree: ttk.Treeview) -> tuple[tuple[str, ...], float]:
+        selected = tuple(tree.selection())
+        try:
+            y = float(tree.yview()[0])
+        except Exception:
+            y = 0.0
+        return selected, y
+
+    def _restore_tree_state(self, tree: ttk.Treeview, selected: tuple[str, ...], y: float) -> None:
+        if selected:
+            existing = [iid for iid in selected if tree.exists(iid)]
+            if existing:
+                tree.selection_set(existing)
+                tree.focus(existing[0])
+                tree.see(existing[0])
+            else:
+                tree.selection_remove(tree.selection())
+        try:
+            tree.yview_moveto(max(0.0, min(1.0, y)))
+        except Exception:
+            pass
+
+    def _wire_form_navigation(self, widgets: list[tk.Widget]) -> None:
+        for w in widgets:
+            if isinstance(w, tk.Text):
+                continue
+            def _next(_e, cur=w):
+                try:
+                    idx = widgets.index(cur)
+                except Exception:
+                    return None
+                for nxt in widgets[idx + 1:]:
+                    if isinstance(nxt, tk.Widget) and nxt.winfo_exists() and str(nxt.cget("state") if hasattr(nxt, "cget") else "") != "disabled":
+                        nxt.focus_set()
+                        return "break"
+                return "break"
+            w.bind("<Return>", _next, add="+")
+
+    def _collect_form_widgets(self, container: tk.Widget) -> list[tk.Widget]:
+        targets: list[tuple[int, int, tk.Widget]] = []
+        for child in container.winfo_children():
+            if isinstance(child, (ttk.Entry, ttk.Combobox, tk.Text)):
+                gi = child.grid_info() if hasattr(child, "grid_info") else {}
+                r = int(gi.get("row", 999)) if gi else 999
+                c = int(gi.get("column", 999)) if gi else 999
+                targets.append((r, c, child))
+            if isinstance(child, (ttk.Frame, ttk.LabelFrame, tk.Frame)):
+                for sub in child.winfo_children():
+                    if isinstance(sub, (ttk.Entry, ttk.Combobox, tk.Text)):
+                        gi = sub.grid_info() if hasattr(sub, "grid_info") else {}
+                        r = int(gi.get("row", 999)) if gi else 999
+                        c = int(gi.get("column", 999)) if gi else 999
+                        targets.append((r, c, sub))
+        targets.sort(key=lambda x: (x[0], x[1]))
+        return [w for _, _, w in targets]
+
+    def _set_initial_focus(self, win: tk.Toplevel, widget: tk.Widget | None) -> None:
+        if not widget:
+            return
+        win.after(30, lambda: widget.focus_set())
+
+    def _attach_tooltip(self, widget: tk.Widget, text_getter) -> None:
+        state = {"tip": None, "job": None}
+
+        def _show():
+            try:
+                txt = str(text_getter() or "").strip()
+                if not txt:
+                    return
+                tip = tk.Toplevel(widget)
+                tip.wm_overrideredirect(True)
+                x = widget.winfo_rootx() + 8
+                y = widget.winfo_rooty() + widget.winfo_height() + 6
+                tip.wm_geometry(f"+{x}+{y}")
+                lbl = tk.Label(tip, text=txt, justify="left", bg="#111827", fg="#FFFFFF", padx=8, pady=5, wraplength=480)
+                lbl.pack()
+                state["tip"] = tip
+            except Exception:
+                pass
+
+        def _enter(_e=None):
+            try:
+                state["job"] = widget.after(500, _show)
+            except Exception:
+                pass
+
+        def _leave(_e=None):
+            job = state.get("job")
+            if job:
+                try:
+                    widget.after_cancel(job)
+                except Exception:
+                    pass
+                state["job"] = None
+            tip = state.get("tip")
+            if tip:
+                try:
+                    tip.destroy()
+                except Exception:
+                    pass
+                state["tip"] = None
+
+        widget.bind("<Enter>", _enter, add="+")
+        widget.bind("<Leave>", _leave, add="+")
+
+    def run_with_busy_ui(self, fn, *, busy_message: str = "처리 중…", success_message: str = "완료", fail_prefix: str = "실패"):
+        prev = str(self.sync_status_var.get()) if hasattr(self, "sync_status_var") else ""
+        changed: list[tk.Widget] = []
+        try:
+            self.root.config(cursor="watch")
+            if hasattr(self, "sync_status_var"):
+                self.sync_status_var.set(busy_message)
+            for attr in ("undo_btn",):
+                w = getattr(self, attr, None)
+                if isinstance(w, tk.Widget):
+                    try:
+                        if str(w.cget("state")) != "disabled":
+                            w.configure(state="disabled")
+                            changed.append(w)
+                    except Exception:
+                        pass
+            self.root.update_idletasks()
+            result = fn()
+            if hasattr(self, "sync_status_var"):
+                self.sync_status_var.set(success_message)
+            return result
+        except Exception as exc:
+            if hasattr(self, "sync_status_var"):
+                self.sync_status_var.set(f"{fail_prefix}: {exc}")
+            raise
+        finally:
+            self.root.config(cursor="")
+            for w in changed:
+                try:
+                    w.configure(state="normal")
+                except Exception:
+                    pass
+            self.root.update_idletasks()
+            if prev and hasattr(self, "root"):
+                self.root.after(2500, lambda p=prev: hasattr(self, "sync_status_var") and self.sync_status_var.set(p))
+
     def _remember_undo(self, payload: dict | None) -> None:
         self._last_undo_payload = payload
         if hasattr(self, "undo_btn"):
@@ -1260,14 +1401,14 @@ class LedgerDesktopApp:
 
         cols = ("status", "complex_name", "address_detail", "contact", "unit_type", "floor", "price_summary", "updated_at")
         col_defs = [
-            ("status", 90),
-            ("complex_name", 180),
-            ("address_detail", 170),
-            ("contact", 130),
-            ("unit_type", 100),
-            ("floor", 70),
-            ("price_summary", 250),
-            ("updated_at", 145),
+            ("status", 86),
+            ("complex_name", 165),
+            ("address_detail", 130),
+            ("contact", 120),
+            ("unit_type", 88),
+            ("floor", 58),
+            ("price_summary", 170),
+            ("updated_at", 130),
         ]
         col_labels = {
             "status": "상태",
@@ -1370,6 +1511,7 @@ class LedgerDesktopApp:
 
         for tab in PROPERTY_TABS:
             tree = self.prop_trees[tab]
+            prev_sel, prev_y = self._snapshot_tree_state(tree)
             for i in tree.get_children():
                 tree.delete(i)
 
@@ -1427,6 +1569,8 @@ class LedgerDesktopApp:
                         row.get("updated_at"),
                     ),
                 )
+
+            self._restore_tree_state(tree, prev_sel, prev_y)
 
     def _on_property_tab_changed(self, _event=None):
         current_tab = self.inner_tabs.tab(self.inner_tabs.select(), "text") if hasattr(self, "inner_tabs") else PROPERTY_TABS[0]
@@ -2019,16 +2163,16 @@ class LedgerDesktopApp:
 
         cols = ("customer_name", "phone", "preferred_tab", "deal_type", "budget", "size", "move_in", "floor_preference", "status", "updated_at")
         col_defs = [
-            ("customer_name", 110),
-            ("phone", 120),
-            ("preferred_tab", 170),
-            ("deal_type", 80),
-            ("budget", 170),
-            ("size", 100),
-            ("move_in", 120),
-            ("floor_preference", 90),
-            ("status", 80),
-            ("updated_at", 150),
+            ("customer_name", 120),
+            ("phone", 122),
+            ("preferred_tab", 110),
+            ("deal_type", 86),
+            ("budget", 125),
+            ("size", 85),
+            ("move_in", 95),
+            ("floor_preference", 78),
+            ("status", 76),
+            ("updated_at", 118),
         ]
         col_labels = {
             "customer_name": "고객명",
@@ -2324,7 +2468,9 @@ class LedgerDesktopApp:
         order = {"문의": 0, "임장예약": 1, "계약진행": 2, "계약완료": 3, "입주": 4, "대기": 5}
         rows.sort(key=lambda r: (order.get(str(r.get("status") or ""), 9), -int(r.get("id") or 0)))
 
-        for tree in getattr(self, "customer_trees", {}).values():
+        tree_states: dict[str, tuple[tuple[str, ...], float]] = {}
+        for name, tree in getattr(self, "customer_trees", {}).items():
+            tree_states[name] = self._snapshot_tree_state(tree)
             for i in tree.get_children():
                 tree.delete(i)
 
@@ -2370,6 +2516,10 @@ class LedgerDesktopApp:
                     idx_tab = len(self.customer_trees[tab_name].get_children())
                     self.customer_trees[tab_name].insert("", "end", iid=str(row.get("id")), tags=(("even" if idx_tab % 2 == 0 else "odd"),), values=tuple(tab_values))
 
+
+        for name, tree in self.customer_trees.items():
+            sel, y = tree_states.get(name, ((), 0.0))
+            self._restore_tree_state(tree, sel, y)
 
     def toggle_selected_customer(self):
         cid = self._selected_id_from_tree(self._current_customer_tree())
@@ -2733,19 +2883,26 @@ class LedgerDesktopApp:
         ttk.Checkbutton(form, text="수리필요", variable=vars_["repair_needed"]).grid(row=4, column=0, padx=8, pady=6, sticky="w")
 
         add_row(5, 0, "세입자정보", ttk.Entry(form, textvariable=vars_["tenant_info"], width=64))
-        add_row(6, 0, "네이버링크", ttk.Entry(form, textvariable=vars_["naver_link"], width=64))
+        link_entry = ttk.Entry(form, textvariable=vars_["naver_link"], width=64)
+        add_row(6, 0, "네이버링크", link_entry)
 
-        ttk.Label(form, text="특이사항").grid(row=7, column=0, padx=8, pady=6, sticky="ne")
-        special_txt = tk.Text(form, height=5, wrap="word")
-        special_txt.insert("1.0", str(vars_["special_notes"].get() or ""))
-        special_txt.grid(row=7, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
-
-        ttk.Label(form, text="별도기재").grid(row=8, column=0, padx=8, pady=6, sticky="ne")
-        note_txt = tk.Text(form, height=5, wrap="word")
-        note_txt.insert("1.0", str(vars_["note"].get() or ""))
-        note_txt.grid(row=8, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
+        notes_expanded = {"v": True}
+        notes_frame = ttk.Frame(form)
+        notes_frame.grid(row=7, column=0, columnspan=6, sticky="nsew")
         form.rowconfigure(7, weight=1)
-        form.rowconfigure(8, weight=1)
+        notes_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(notes_frame, text="특이사항").grid(row=0, column=0, padx=8, pady=6, sticky="ne")
+        special_txt = tk.Text(notes_frame, height=5, wrap="word")
+        special_txt.insert("1.0", str(vars_["special_notes"].get() or ""))
+        special_txt.grid(row=0, column=1, padx=8, pady=6, sticky="nsew")
+
+        ttk.Label(notes_frame, text="별도기재").grid(row=1, column=0, padx=8, pady=6, sticky="ne")
+        note_txt = tk.Text(notes_frame, height=5, wrap="word")
+        note_txt.insert("1.0", str(vars_["note"].get() or ""))
+        note_txt.grid(row=1, column=1, padx=8, pady=6, sticky="nsew")
+        notes_frame.rowconfigure(0, weight=1)
+        notes_frame.rowconfigure(1, weight=1)
 
         side = ttk.LabelFrame(right, text="핵심 액션")
         side.pack(fill="y", expand=False, anchor="n")
@@ -2790,7 +2947,25 @@ class LedgerDesktopApp:
         ttk.Button(side, text="링크 열기", style="Secondary.TButton", command=open_link).pack(fill="x", padx=8, pady=4)
         ttk.Button(side, text="숨김/보임", style="Secondary.TButton", command=toggle_hide).pack(fill="x", padx=8, pady=4)
         ttk.Button(side, text="🗑️ 삭제", style="Danger.TButton", command=soft_delete).pack(fill="x", padx=8, pady=(4, 8))
+        def toggle_notes():
+            notes_expanded["v"] = not notes_expanded["v"]
+            if notes_expanded["v"]:
+                notes_frame.grid()
+                notes_btn.configure(text="메모 접기")
+            else:
+                notes_frame.grid_remove()
+                notes_btn.configure(text="메모 펼치기")
+
+        notes_btn = ttk.Button(side, text="메모 접기", style="Secondary.TButton", command=toggle_notes)
+        notes_btn.pack(fill="x", padx=8, pady=(0, 6))
         ttk.Button(side, text="할 일 추가", style="Secondary.TButton", command=lambda: self.open_add_task_window(default_entity_type="PROPERTY", default_entity_id=property_id)).pack(fill="x", padx=8, pady=(4, 8))
+
+        self._attach_tooltip(link_entry, lambda: vars_["naver_link"].get())
+        self._attach_tooltip(special_txt, lambda: special_txt.get("1.0", "end").strip())
+        self._attach_tooltip(note_txt, lambda: note_txt.get("1.0", "end").strip())
+        form_widgets = self._collect_form_widgets(form)
+        self._wire_form_navigation(form_widgets)
+        self._set_initial_focus(win, form_widgets[0] if form_widgets else None)
 
         # ---- photos tab
         ph_box = ttk.LabelFrame(tab_photos, text="사진")
@@ -3116,10 +3291,14 @@ class LedgerDesktopApp:
                 w = ttk.Entry(left, textvariable=vars_[key], width=26)
             w.grid(row=i // 3, column=(i % 3) * 2 + 1, padx=8, pady=6, sticky="ew")
 
-        ttk.Label(left, text="기타요청").grid(row=4, column=0, padx=8, pady=6, sticky="ne")
-        extra_txt = tk.Text(left, height=8, wrap="word")
+        detail_expanded = {"v": True}
+        extra_wrap = ttk.Frame(left)
+        extra_wrap.grid(row=4, column=0, columnspan=6, sticky="nsew")
+        extra_wrap.columnconfigure(1, weight=1)
+        ttk.Label(extra_wrap, text="기타요청").grid(row=0, column=0, padx=8, pady=6, sticky="ne")
+        extra_txt = tk.Text(extra_wrap, height=8, wrap="word")
         extra_txt.insert("1.0", str(vars_.get("extra_needs", tk.StringVar(value="")).get()))
-        extra_txt.grid(row=4, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
+        extra_txt.grid(row=0, column=1, padx=8, pady=6, sticky="nsew")
         left.rowconfigure(4, weight=1)
 
         def save_changes():
@@ -3152,6 +3331,23 @@ class LedgerDesktopApp:
         ttk.Button(right, text="할 일 추가", style="Secondary.TButton", command=lambda: self.open_add_task_window(default_entity_type="CUSTOMER", default_entity_id=customer_id)).pack(fill="x", padx=8, pady=4)
         ttk.Button(right, text="숨김/보임", style="Secondary.TButton", command=toggle_hide).pack(fill="x", padx=8, pady=4)
         ttk.Button(right, text="🗑️ 삭제", style="Danger.TButton", command=soft_delete).pack(fill="x", padx=8, pady=(4, 8))
+
+        def toggle_extra():
+            detail_expanded["v"] = not detail_expanded["v"]
+            if detail_expanded["v"]:
+                extra_wrap.grid()
+                extra_btn.configure(text="기타요청 접기")
+            else:
+                extra_wrap.grid_remove()
+                extra_btn.configure(text="기타요청 펼치기")
+
+        extra_btn = ttk.Button(right, text="기타요청 접기", style="Secondary.TButton", command=toggle_extra)
+        extra_btn.pack(fill="x", padx=8, pady=(0, 8))
+
+        self._attach_tooltip(extra_txt, lambda: extra_txt.get("1.0", "end").strip())
+        form_widgets = self._collect_form_widgets(left)
+        self._wire_form_navigation(form_widgets)
+        self._set_initial_focus(win, form_widgets[0] if form_widgets else None)
 
     def _open_related_navigation_popup(self, *, title: str, customers: list[int] | None = None, properties: list[int] | None = None):
         customers = customers or []
@@ -3319,10 +3515,11 @@ class LedgerDesktopApp:
             "preferred_tab": "",
             "budget": "",
         }
-        photos = self._ranked_photos_for_property(property_id)
-        self.settings = self._load_settings()
-        out_dir = self.settings.sync_dir / "exports" / "proposals"
-        try:
+
+        def _work():
+            photos = self._ranked_photos_for_property(property_id)
+            self.settings = self._load_settings()
+            out_dir = self.settings.sync_dir / "exports" / "proposals"
             out = generate_proposal_pdf(
                 customer=customer,
                 properties=[row],
@@ -3330,30 +3527,34 @@ class LedgerDesktopApp:
                 output_dir=out_dir,
                 title="매물 제안서",
             )
+
+            ymd = datetime.now().strftime("%Y%m%d")
+            complex_part = self._safe_file_component(row.get("complex_name") or "매물")
+            dongho_text = str(row.get("address_detail") or "").strip() or f"{str(row.get('dong') or '').strip()}_{str(row.get('ho') or '').strip()}"
+            dongho_part = self._safe_file_component(dongho_text)
+            package_dir = self.settings.sync_dir / "exports" / "proposal_packages" / f"{complex_part}_{dongho_part}_{ymd}"
+            package_dir.mkdir(parents=True, exist_ok=True)
+
+            if out.pdf_path.exists():
+                shutil.copy2(out.pdf_path, package_dir / self._safe_file_component(out.pdf_path.name))
+
+            for ph in photos:
+                src = Path(str(ph.get("file_path") or "").strip())
+                if not src.exists() or not src.is_file():
+                    continue
+                tag = str(ph.get("tag") or "기타").strip() or "기타"
+                tag_dir = package_dir / self._safe_file_component(tag)
+                tag_dir.mkdir(parents=True, exist_ok=True)
+                dst = tag_dir / src.name
+                if not dst.exists():
+                    shutil.copy2(src, dst)
+            return package_dir
+
+        try:
+            package_dir = self.run_with_busy_ui(_work, busy_message="PDF/사진 패킹 처리 중…", success_message="PDF/사진 패킹 완료")
         except Exception as exc:
             messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
             return
-
-        ymd = datetime.now().strftime("%Y%m%d")
-        complex_part = self._safe_file_component(row.get("complex_name") or "매물")
-        dongho_text = str(row.get("address_detail") or "").strip() or f"{str(row.get('dong') or '').strip()}_{str(row.get('ho') or '').strip()}"
-        dongho_part = self._safe_file_component(dongho_text)
-        package_dir = self.settings.sync_dir / "exports" / "proposal_packages" / f"{complex_part}_{dongho_part}_{ymd}"
-        package_dir.mkdir(parents=True, exist_ok=True)
-
-        if out.pdf_path.exists():
-            shutil.copy2(out.pdf_path, package_dir / self._safe_file_component(out.pdf_path.name))
-
-        for ph in photos:
-            src = Path(str(ph.get("file_path") or "").strip())
-            if not src.exists() or not src.is_file():
-                continue
-            tag = str(ph.get("tag") or "기타").strip() or "기타"
-            tag_dir = package_dir / self._safe_file_component(tag)
-            tag_dir.mkdir(parents=True, exist_ok=True)
-            dst = tag_dir / src.name
-            if not dst.exists():
-                shutil.copy2(src, dst)
 
         messagebox.showinfo("완료", f"PDF/사진 패킹 완료\n{package_dir.name}")
         _open_folder(package_dir)
