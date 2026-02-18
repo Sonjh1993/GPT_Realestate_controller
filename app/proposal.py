@@ -66,7 +66,22 @@ def _yn(v: Any) -> str:
     return ""
 
 
+def _last4_phone(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-4:] if digits else ""
+
+
+def _anonymize_customer(customer: dict[str, Any]) -> dict[str, Any]:
+    c = dict(customer or {})
+    if "customer_name" in c:
+        c["customer_name"] = ""
+    if "phone" in c:
+        c["phone"] = _last4_phone(c.get("phone"))
+    return c
+
+
 def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any]], *, include_links: bool = True) -> str:
+    customer = _anonymize_customer(customer)
     cname = str(customer.get("customer_name") or "").strip()
     phone = str(customer.get("phone") or "").strip()
     header = f"안녕하세요{(' ' + cname + '님') if cname else ''}.\n요청 조건 기준 추천 매물 보내드립니다.\n"
@@ -138,6 +153,7 @@ def generate_proposal_pdf(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    customer = _anonymize_customer(customer)
     cname = _safe_filename(str(customer.get("customer_name") or "고객"))
     base = f"proposal_{cname}_{ts}"
 
