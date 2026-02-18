@@ -1219,9 +1219,9 @@ class LedgerDesktopApp:
             "note": tk.StringVar(value=""),
         }
 
-        eok_options = [str(i) for i in range(0, 101)]
+        eok_options = [str(i) for i in range(0, 301)]
         che_options = [str(i) for i in range(0, 10)]
-        man_options = [str(i * 10) for i in range(0, 101)]
+        man_options = [str(i * 10) for i in range(0, 501)]
 
         header = ttk.Frame(win)
         header.pack(fill="x", padx=10, pady=(10, 4))
@@ -1754,7 +1754,7 @@ class LedgerDesktopApp:
         self._fit_toplevel(win, 820, 660)
 
         vars_ = {
-            "customer_name": tk.StringVar(),
+            "customer_name": tk.StringVar(value=""),
             "phone": tk.StringVar(),
             "preferred_tab": tk.StringVar(value=""),
             "deal_type": tk.StringVar(value="매매"),
@@ -1775,9 +1775,9 @@ class LedgerDesktopApp:
             "status": tk.StringVar(value="문의"),
         }
 
-        eok_options = [str(i) for i in range(0, 101)]
+        eok_options = [str(i) for i in range(0, 301)]
         che_options = [str(i) for i in range(0, 10)]
-        man_options = [str(i * 10) for i in range(0, 101)]
+        man_options = [str(i * 10) for i in range(0, 501)]
 
         header = ttk.Frame(win)
         header.pack(fill="x", padx=10, pady=(10, 4))
@@ -1793,12 +1793,10 @@ class LedgerDesktopApp:
         step_titles = ["기본", "희망조건", "일정/메모"]
 
         # Step1
-        ttk.Label(s1, text="고객명").grid(row=0, column=0, padx=6, pady=8, sticky="e")
-        ttk.Entry(s1, textvariable=vars_["customer_name"], width=32).grid(row=0, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s1, text="전화번호").grid(row=1, column=0, padx=6, pady=8, sticky="e")
-        ttk.Entry(s1, textvariable=vars_["phone"], width=32).grid(row=1, column=1, padx=6, pady=8, sticky="w")
-        ttk.Label(s1, text="상태").grid(row=2, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s1, textvariable=vars_["status"], values=CUSTOMER_STATUS_VALUES, state="readonly", width=29).grid(row=2, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="전화번호*").grid(row=0, column=0, padx=6, pady=8, sticky="e")
+        ttk.Entry(s1, textvariable=vars_["phone"], width=32).grid(row=0, column=1, padx=6, pady=8, sticky="w")
+        ttk.Label(s1, text="상태").grid(row=1, column=0, padx=6, pady=8, sticky="e")
+        ttk.Combobox(s1, textvariable=vars_["status"], values=CUSTOMER_STATUS_VALUES, state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
 
         # Step2
         ttk.Label(s2, text="희망 유형").grid(row=0, column=0, padx=6, pady=8, sticky="e")
@@ -1878,8 +1876,8 @@ class LedgerDesktopApp:
 
         def validate_step(idx: int) -> bool:
             if idx == 0:
-                if not (vars_["customer_name"].get().strip() or vars_["phone"].get().strip()):
-                    messagebox.showwarning("입력 확인", "고객명 또는 전화번호 중 하나는 입력해주세요.")
+                if not vars_["phone"].get().strip():
+                    messagebox.showwarning("입력 확인", "전화번호는 필수 입력입니다.")
                     return False
                 return True
             if idx == 1:
@@ -1930,6 +1928,7 @@ class LedgerDesktopApp:
             if not validate_step(current["idx"]):
                 return
             payload = {k: v.get().strip() for k, v in vars_.items()}
+            payload["customer_name"] = ""
             payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if move_mode.get() == "날짜선택" else move_mode.get().strip()
             deal = payload.get("deal_type", "")
             budget_10m = int(payload.get("budget_eok", "0") or 0) * 10 + int(payload.get("budget_che", "0") or 0)
@@ -2711,10 +2710,11 @@ class LedgerDesktopApp:
         vars_ = {
             "start": tk.StringVar(value=datetime.now().strftime("%Y-%m-%d %H:%M")),
             "end": tk.StringVar(value=(datetime.now() + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M")),
-            "customer_id": tk.StringVar(value=""),
             "title": tk.StringVar(value="현장/상담"),
             "memo": tk.StringVar(value=""),
         }
+        selected_customer_id: dict[str, int | None] = {"id": None}
+        selected_customer_label = tk.StringVar(value="미선택")
 
         frm = ttk.Frame(win)
         frm.pack(fill="both", expand=True, padx=12, pady=12)
@@ -2725,7 +2725,77 @@ class LedgerDesktopApp:
 
         row(0, "시작(YYYY-MM-DD HH:MM)", "start")
         row(1, "종료(YYYY-MM-DD HH:MM)", "end")
-        row(2, "고객 ID(선택)", "customer_id")
+
+        ttk.Label(frm, text="고객(선택)").grid(row=2, column=0, padx=6, pady=6, sticky="e")
+        pick_wrap = ttk.Frame(frm)
+        pick_wrap.grid(row=2, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(pick_wrap, textvariable=selected_customer_label, width=28).pack(side="left")
+
+        def pick_customer():
+            pop = tk.Toplevel(win)
+            pop.title("고객 선택")
+            self._fit_toplevel(pop, 760, 560)
+
+            search_var = tk.StringVar(value="")
+            top = ttk.Frame(pop)
+            top.pack(fill="x", padx=8, pady=(8, 4))
+            ttk.Label(top, text="검색(전화/이름)").pack(side="left")
+            ent = ttk.Entry(top, textvariable=search_var, width=24)
+            ent.pack(side="left", padx=6)
+
+            tree = ttk.Treeview(pop, columns=("phone", "name", "status"), show="headings", height=14)
+            tree.heading("phone", text="전화번호")
+            tree.heading("name", text="이름")
+            tree.heading("status", text="상태")
+            tree.column("phone", width=170, anchor="center")
+            tree.column("name", width=170, anchor="w")
+            tree.column("status", width=120, anchor="center")
+            tree.pack(fill="both", expand=True, padx=8, pady=8)
+
+            rows = [c for c in list_customers(include_deleted=False) if not c.get("hidden")]
+
+            def refresh(*_):
+                q = search_var.get().strip().lower()
+                qd = "".join(ch for ch in q if ch.isdigit())
+                for iid in tree.get_children():
+                    tree.delete(iid)
+                for c in rows:
+                    phone_digits = "".join(ch for ch in str(c.get("phone") or "") if ch.isdigit())
+                    hay = f"{c.get('customer_name','')} {c.get('phone','')}".lower()
+                    if q and q not in hay and (not qd or qd not in phone_digits):
+                        continue
+                    cid = c.get("id")
+                    if not cid:
+                        continue
+                    tree.insert("", "end", iid=str(cid), values=(fmt_phone(c.get("phone")), c.get("customer_name") or "", c.get("status") or ""))
+
+            def done():
+                sel = tree.selection()
+                if not sel:
+                    messagebox.showwarning("선택", "고객을 선택해주세요.")
+                    return
+                cid = int(sel[0])
+                c = get_customer(cid) or {}
+                selected_customer_id["id"] = cid
+                selected_customer_label.set(customer_label(c))
+                pop.destroy()
+
+            ent.bind("<KeyRelease>", refresh)
+            ttk.Button(top, text="초기화", command=lambda: (search_var.set(""), refresh())).pack(side="left", padx=4)
+            btns = ttk.Frame(pop)
+            btns.pack(fill="x", padx=8, pady=(0, 8))
+            ttk.Button(btns, text="선택", command=done).pack(side="left")
+            ttk.Button(btns, text="취소", command=pop.destroy).pack(side="left", padx=6)
+            tree.bind("<Double-1>", lambda _e: done())
+            refresh()
+
+        def clear_customer():
+            selected_customer_id["id"] = None
+            selected_customer_label.set("미선택")
+
+        ttk.Button(pick_wrap, text="고객 선택", command=pick_customer).pack(side="left", padx=4)
+        ttk.Button(pick_wrap, text="해제", command=clear_customer).pack(side="left")
+
         row(3, "제목", "title")
         row(4, "메모", "memo")
 
@@ -2739,8 +2809,7 @@ class LedgerDesktopApp:
                 messagebox.showwarning("확인", "시간 형식이 올바르지 않습니다. 예: 2026-02-13 14:30")
                 return
 
-            cid_text = vars_["customer_id"].get().strip()
-            cid = int(cid_text) if cid_text.isdigit() else None
+            cid = selected_customer_id["id"]
             title = vars_["title"].get().strip() or "현장/상담"
             memo = vars_["memo"].get().strip()
 
