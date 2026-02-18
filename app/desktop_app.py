@@ -2609,6 +2609,7 @@ class LedgerDesktopApp:
         ttk.Label(ph_controls, text="사진 구분").pack(side="left", padx=4)
         ttk.Combobox(ph_controls, textvariable=ph_tag_var, values=PHOTO_TAG_VALUES, state="readonly", width=14).pack(side="left", padx=4)
 
+        ttk.Button(actions, text="제안서+사진 패킹", command=lambda: self.generate_proposal_for_property(property_id)).pack(side="left", padx=4)
         def refresh_photos():
             for i in ph_tree.get_children():
                 ph_tree.delete(i)
@@ -2964,8 +2965,6 @@ class LedgerDesktopApp:
         tree.column("name", width=380)
         tree.pack(fill="both", expand=True, padx=10, pady=10)
 
-        for cid in customers:
-            c = get_customer(cid)
             tree.insert("", "end", iid=f"C:{cid}", values=("고객", customer_label(c or {})))
         for pid in properties:
             p = get_property(pid)
@@ -3084,6 +3083,39 @@ class LedgerDesktopApp:
             out = generate_proposal_pdf(
                 customer=customer,
                 properties=[row],
+    def _export_property_proposal_bundle(self, property_row: dict, proposal_pdf: Path, proposal_txt: Path) -> Path:
+        today = datetime.now().strftime("%Y%m%d")
+        complex_name = str(property_row.get("complex_name") or property_row.get("tab") or "매물").strip()
+        address_detail = str(property_row.get("address_detail") or "").strip()
+        title_raw = f"{complex_name}_{address_detail}_{today}".strip("_")
+        safe_title = re.sub(r'[\/:*?"<>|]+', "_", title_raw)
+        safe_title = re.sub(r"\s+", "_", safe_title).strip("_") or f"매물_{property_row.get('id')}_{today}"
+
+        base_dir = Path.home() / "Desktop" / "Google Drive" / "real_estate_note" / "scripts"
+        out_dir = base_dir / safe_title
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        pdf_dst = out_dir / proposal_pdf.name
+        txt_dst = out_dir / proposal_txt.name
+        shutil.copy2(proposal_pdf, pdf_dst)
+        shutil.copy2(proposal_txt, txt_dst)
+
+        photos_root = out_dir / "photos"
+        photos_root.mkdir(parents=True, exist_ok=True)
+        photos = list_photos(int(property_row.get("id") or 0))
+        for ph in photos:
+            src = Path(str(ph.get("file_path") or "").strip())
+            if not src.exists() or not src.is_file():
+                continue
+            tag = str(ph.get("tag") or "기타").strip() or "기타"
+            tag_dir = photos_root / re.sub(r'[\/:*?"<>|]+', "_", tag)
+            tag_dir.mkdir(parents=True, exist_ok=True)
+            dst = tag_dir / src.name
+            if not dst.exists():
+                shutil.copy2(src, dst)
+
+        return out_dir
+
                 photos_by_property=photos_by_property,
                 output_dir=out_dir,
                 title="매물 제안서",
@@ -3091,8 +3123,16 @@ class LedgerDesktopApp:
         except Exception as exc:
             messagebox.showerror("오류", f"제안서 생성 실패: {exc}")
             return
-        messagebox.showinfo("완료", f"제안서 생성 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}")
-        _open_folder(out_dir)
+        try:
+            bundle_dir = self._export_property_proposal_bundle(row, out.pdf_path, out.txt_path)
+            messagebox.showinfo(
+                "완료",
+                f"제안서 패킹 완료\n- PDF: {out.pdf_path.name}\n- TXT: {out.txt_path.name}\n- 폴더: {bundle_dir}",
+            )
+            _open_folder(bundle_dir)
+        except Exception as exc:
+            messagebox.showwarning("안내", f"PDF/TXT 생성은 완료되었지만 패킹 중 오류가 발생했습니다.\n{exc}")
+            _open_folder(out_dir)
 
     def copy_message_for_property(self, property_id: int, customer: dict | None = None) -> None:
         row = get_property(property_id)
