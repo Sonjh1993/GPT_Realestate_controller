@@ -1997,7 +1997,10 @@ class LedgerDesktopApp:
         def save():
             if not validate_step(current["idx"]):
                 return
-            payload = {k: v.get().strip() for k, v in vars_.items()}
+            payload: dict[str, object] = {}
+            for key, tk_var in vars_.items():
+                raw = tk_var.get()
+                payload[key] = raw.strip() if isinstance(raw, str) else raw
             payload["customer_name"] = ""
             payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if move_mode.get() == "날짜선택" else move_mode.get().strip()
             selected_deals = [d for d, key in (("매매", "deal_sale"), ("전세", "deal_jeonse"), ("월세", "deal_wolse")) if bool(payload.get(key))]
