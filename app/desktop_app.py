@@ -5,6 +5,7 @@ import json
 import platform
 import re
 import shutil
+import threading
 import webbrowser
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -128,6 +129,10 @@ def property_label(p: dict) -> str:
 class AppSettings:
     sync_dir: Path
     webhook_url: str
+    auto_sync_sec: int = 60
+    auto_sync_on: bool = True
+    export_mode: str = "single"
+    export_ics: bool = False
 
 
 class LedgerDesktopApp:
@@ -145,6 +150,9 @@ class LedgerDesktopApp:
         self.task_sort_col = "due_at"
         self.task_sort_desc = False
         self.enable_handoff = False
+        self._sync_after_id = None
+        self._auto_sync_after_id = None
+        self._sync_inflight = False
 
         init_db()
         self.settings = self._load_settings()
@@ -226,11 +234,35 @@ class LedgerDesktopApp:
         env = SyncSettings.from_env()
         sync_dir_path = Path(sync_dir).expanduser() if sync_dir else env.sync_dir
         webhook_url = webhook if webhook else env.webhook_url
-        return AppSettings(sync_dir=sync_dir_path, webhook_url=webhook_url)
+
+        auto_sync_on_raw = get_setting("AUTO_SYNC_ON", "1").strip()
+        auto_sync_on = auto_sync_on_raw not in {"0", "false", "False", "off", "OFF"}
+        try:
+            auto_sync_sec = max(10, int(get_setting("AUTO_SYNC_SEC", "60").strip() or "60"))
+        except Exception:
+            auto_sync_sec = 60
+
+        export_mode_raw = get_setting("EXPORT_MODE", "single").strip() or "single"
+        export_mode = "advanced" if export_mode_raw in {"advanced", "고급"} else "single"
+        export_ics_raw = get_setting("EXPORT_ICS", "0").strip()
+        export_ics = export_ics_raw in {"1", "true", "True", "on", "ON"}
+
+        return AppSettings(
+            sync_dir=sync_dir_path,
+            webhook_url=webhook_url,
+            auto_sync_sec=auto_sync_sec,
+            auto_sync_on=auto_sync_on,
+            export_mode=export_mode,
+            export_ics=export_ics,
+        )
 
     def _persist_settings(self) -> None:
         set_setting("GOOGLE_DRIVE_SYNC_DIR", str(self.settings.sync_dir))
         set_setting("GOOGLE_SHEETS_WEBHOOK_URL", self.settings.webhook_url)
+        set_setting("AUTO_SYNC_ON", "1" if self.settings.auto_sync_on else "0")
+        set_setting("AUTO_SYNC_SEC", str(max(10, int(self.settings.auto_sync_sec or 60))))
+        set_setting("EXPORT_MODE", self.settings.export_mode)
+        set_setting("EXPORT_ICS", "1" if self.settings.export_ics else "0")
 
     # -----------------
     # Dashboard
@@ -432,6 +464,7 @@ class LedgerDesktopApp:
         if tid is None:
             return
         mark_task_done(tid)
+        self.request_sync(reason="TASK_DONE")
         self.refresh_tasks()
         self.refresh_dashboard()
 
@@ -660,6 +693,7 @@ class LedgerDesktopApp:
 
         try:
             mark_task_done(task_id)
+            self.request_sync(reason="TASK_DONE")
         except Exception as exc:
             messagebox.showerror("오류", f"완료 처리 실패: {exc}")
             return
@@ -966,6 +1000,7 @@ class LedgerDesktopApp:
                     messagebox.showwarning("확인", "고객을 1명 선택해주세요.")
                     return
                 add_task(title=title, due_at=due_at, entity_type="CUSTOMER", entity_id=selected_customer, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+                self.request_sync(reason="TASK_ADD")
             elif target == "매물":
                 if not selected_properties:
                     messagebox.showwarning("확인", "매물을 선택해주세요.")
@@ -973,8 +1008,10 @@ class LedgerDesktopApp:
                 pids = selected_properties if batch_var.get() else selected_properties[:1]
                 for pid in pids:
                     add_task(title=title, due_at=due_at, entity_type="PROPERTY", entity_id=pid, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+                self.request_sync(reason="TASK_ADD")
             else:
                 add_task(title=title, due_at=due_at, entity_type=None, entity_id=None, note=note_var.get().strip(), kind="MANUAL", status="OPEN")
+                self.request_sync(reason="TASK_ADD")
 
             self.refresh_tasks()
             self.refresh_dashboard()
@@ -1452,6 +1489,7 @@ class LedgerDesktopApp:
 
             try:
                 add_property(data)
+                self.request_sync(reason="PROPERTY_ADD")
             except Exception as exc:
                 messagebox.showerror("저장 실패", str(exc))
                 return
@@ -1495,6 +1533,7 @@ class LedgerDesktopApp:
         if pid is None:
             return
         toggle_property_hidden(pid)
+        self.request_sync(reason="PROPERTY_HIDE")
         self.refresh_all()
     
     def delete_selected_property(self, tab_name: str):
@@ -1504,6 +1543,7 @@ class LedgerDesktopApp:
             return
         if messagebox.askyesno("확인", "해당 물건을 삭제 처리(복구 가능)할까요?"):
             soft_delete_property(pid)
+            self.request_sync(reason="PROPERTY_DELETE")
             self.refresh_all()
     
     def open_selected_property_detail(self, tab_name: str):
@@ -1545,6 +1585,7 @@ class LedgerDesktopApp:
             if pid is None:
                 return
             toggle_property_hidden(pid)
+            self.request_sync(reason="PROPERTY_HIDE")
             self.refresh_properties()
             win.destroy()
 
@@ -1559,6 +1600,7 @@ class LedgerDesktopApp:
             if pid is None:
                 return
             soft_delete_property(pid)
+            self.request_sync(reason="PROPERTY_DELETE")
             self.refresh_all()
             win.destroy()
 
@@ -1874,6 +1916,7 @@ class LedgerDesktopApp:
 
             try:
                 add_customer(payload)
+                self.request_sync(reason="CUSTOMER_ADD")
             except Exception as exc:
                 messagebox.showerror("저장 실패", str(exc))
                 return
@@ -1963,6 +2006,7 @@ class LedgerDesktopApp:
             return
         if messagebox.askyesno("확인", "해당 고객 요청을 삭제 처리(복구 가능)할까요?"):
             soft_delete_customer(cid)
+            self.request_sync(reason="CUSTOMER_DELETE")
             self.refresh_all()
     
     def open_selected_customer_detail(self):
@@ -1976,35 +2020,44 @@ class LedgerDesktopApp:
         item = tree.identify_row(event.y)
         if item:
             try:
-                cid = int(tree.item(item, "values")[0])
+                cid = int(item)
                 self.open_customer_detail(cid)
                 return
             except Exception:
                 pass
         self.open_selected_customer_detail()
-    
-        # -----------------
-        # Matching
-        # -----------------
+
     def open_hidden_customers_window(self):
         win = tk.Toplevel(self.root)
         win.title("고객 숨김함")
         self._fit_toplevel(win, 760, 560)
-        tree = ttk.Treeview(win, columns=("id", "name", "phone"), show="headings", height=14)
-        for c in ("id", "name", "phone"):
-            tree.heading(c, text=c)
+        tree = ttk.Treeview(win, columns=("phone", "name", "status"), show="headings", height=14)
+        tree.heading("phone", text="전화번호")
+        tree.heading("name", text="이름")
+        tree.heading("status", text="상태")
+        tree.column("phone", width=180)
+        tree.column("name", width=180)
+        tree.column("status", width=120)
         tree.pack(fill="both", expand=True, padx=8, pady=8)
+
         hidden_rows = [r for r in list_customers(include_deleted=False) if r.get("hidden")]
         for r in hidden_rows:
-            tree.insert("", "end", iid=str(r.get("id")), values=(fmt_phone(r.get("phone")), r.get("customer_name"), r.get("status") or ""))
+            tree.insert(
+                "",
+                "end",
+                iid=str(r.get("id")),
+                values=(fmt_phone(r.get("phone")), r.get("customer_name") or "", r.get("status") or ""),
+            )
 
         def _selected_id():
             sel = tree.selection()
             if not sel:
+                messagebox.showwarning("확인", "고객을 먼저 선택해주세요.", parent=win)
                 return None
             try:
                 return int(sel[0])
             except Exception:
+                messagebox.showerror("오류", "선택된 고객 ID를 읽을 수 없습니다.", parent=win)
                 return None
 
         def restore():
@@ -2012,8 +2065,10 @@ class LedgerDesktopApp:
             if cid is None:
                 return
             toggle_customer_hidden(cid)
-            self.refresh_customers()
-            win.destroy()
+            self.request_sync(reason="CUSTOMER_HIDE")
+            self.refresh_all()
+            for item in tree.selection():
+                tree.delete(item)
 
         def open_detail():
             cid = _selected_id()
@@ -2025,14 +2080,18 @@ class LedgerDesktopApp:
             cid = _selected_id()
             if cid is None:
                 return
+            if not messagebox.askyesno("확인", "해당 고객을 삭제 처리(복구 가능)할까요?", parent=win):
+                return
             soft_delete_customer(cid)
+            self.request_sync(reason="CUSTOMER_DELETE")
             self.refresh_all()
-            win.destroy()
+            for item in tree.selection():
+                tree.delete(item)
 
         btns = ttk.Frame(win)
         btns.pack(pady=6)
         ttk.Button(btns, text="복구", command=restore).pack(side="left", padx=4)
-        ttk.Button(btns, text="상세", command=open_detail).pack(side="left", padx=4)
+        ttk.Button(btns, text="정보보기", command=open_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="삭제", command=delete_it).pack(side="left", padx=4)
 
     def _build_settings_ui(self):
@@ -2041,6 +2100,10 @@ class LedgerDesktopApp:
 
         self.set_sync_dir_var = tk.StringVar(value=str(self.settings.sync_dir))
         self.set_webhook_var = tk.StringVar(value=self.settings.webhook_url)
+        self.set_auto_sync_on_var = tk.BooleanVar(value=bool(self.settings.auto_sync_on))
+        self.set_auto_sync_sec_var = tk.IntVar(value=max(10, int(self.settings.auto_sync_sec or 60)))
+        self.set_export_mode_var = tk.StringVar(value="단일파일 추천" if self.settings.export_mode == "single" else "고급(CSV/ICS 포함)")
+        self.set_export_ics_var = tk.BooleanVar(value=bool(self.settings.export_ics))
 
         ttk.Label(box, text="Drive 동기화 폴더").grid(row=0, column=0, padx=6, pady=6, sticky="e")
         ttk.Entry(box, textvariable=self.set_sync_dir_var, width=80).grid(row=0, column=1, padx=6, pady=6, sticky="w")
@@ -2049,8 +2112,22 @@ class LedgerDesktopApp:
         ttk.Label(box, text="(선택) Sheets 웹훅 URL").grid(row=1, column=0, padx=6, pady=6, sticky="e")
         ttk.Entry(box, textvariable=self.set_webhook_var, width=80).grid(row=1, column=1, padx=6, pady=6, sticky="w")
 
+        ttk.Checkbutton(box, text="자동 동기화 사용", variable=self.set_auto_sync_on_var).grid(row=2, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(box, text="자동 동기화 주기(초)").grid(row=3, column=0, padx=6, pady=6, sticky="e")
+        ttk.Spinbox(box, from_=10, to=3600, increment=10, textvariable=self.set_auto_sync_sec_var, width=10).grid(row=3, column=1, padx=6, pady=6, sticky="w")
+
+        ttk.Label(box, text="내보내기 모드").grid(row=4, column=0, padx=6, pady=6, sticky="e")
+        ttk.Combobox(
+            box,
+            textvariable=self.set_export_mode_var,
+            values=["단일파일 추천", "고급(CSV/ICS 포함)"],
+            state="readonly",
+            width=24,
+        ).grid(row=4, column=1, padx=6, pady=6, sticky="w")
+        ttk.Checkbutton(box, text="캘린더(ICS) 내보내기", variable=self.set_export_ics_var).grid(row=5, column=1, padx=6, pady=6, sticky="w")
+
         btns = ttk.Frame(box)
-        btns.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=6)
+        btns.grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=6)
         ttk.Button(btns, text="저장", command=self.save_settings).pack(side="left", padx=4)
         ttk.Button(btns, text="내보내기/동기화 실행", command=self.export_sync).pack(side="left", padx=4)
         ttk.Button(btns, text="폴더 열기", command=lambda: _open_folder(Path(self.set_sync_dir_var.get()).expanduser())).pack(side="left", padx=4)
@@ -2058,43 +2135,100 @@ class LedgerDesktopApp:
         hint = ttk.Label(
             self.settings_tab,
             text=(
-                "TIP: Drive 동기화 폴더를 'Google Drive' 안의 폴더로 지정하면,\n"
-                "     내보낸 CSV/JSON/ICS/사진을 어디서나 열람할 수 있습니다. (API 없이도 운영 가능)"
+                "TIP: 자동 동기화(기본 60초) + 변경 후 즉시(5초 디바운스)로 버튼 없이도 동작합니다.\n"
+                "     단일파일 모드에서는 exports/ledger_snapshot.json 1개만 생성됩니다."
             ),
         )
         hint.pack(anchor="w", padx=14)
-    
+
     def browse_sync_dir(self):
         d = filedialog.askdirectory(title="동기화 폴더 선택")
         if d:
             self.set_sync_dir_var.set(d)
-    
+
     def save_settings(self):
         sync_dir = Path(self.set_sync_dir_var.get()).expanduser()
         webhook = self.set_webhook_var.get().strip()
-        self.settings = AppSettings(sync_dir=sync_dir, webhook_url=webhook)
+        export_mode = "single" if self.set_export_mode_var.get() == "단일파일 추천" else "advanced"
+        try:
+            auto_sync_sec = max(10, int(self.set_auto_sync_sec_var.get()))
+        except Exception:
+            auto_sync_sec = 60
+
+        self.settings = AppSettings(
+            sync_dir=sync_dir,
+            webhook_url=webhook,
+            auto_sync_sec=auto_sync_sec,
+            auto_sync_on=bool(self.set_auto_sync_on_var.get()),
+            export_mode=export_mode,
+            export_ics=bool(self.set_export_ics_var.get()),
+        )
         self._persist_settings()
+        self.start_auto_sync_loop()
         messagebox.showinfo("완료", "설정이 저장되었습니다.")
-    
-        # -----------------
-        # Sync / Export
-        # -----------------
-    def export_sync(self, *, silent: bool = False):
-        self.settings = self._load_settings()  # 최신 반영
+
+    def _export_sync_core(self) -> tuple[bool, str]:
+        self.settings = self._load_settings()
         props = list_properties(include_deleted=False)
         custs = list_customers(include_deleted=False)
         photos = list_photos_all()
         viewings = list_viewings()
         tasks = list_tasks(include_done=False)
 
-        ok, msg = upload_visible_data(
+        return upload_visible_data(
             props,
             custs,
             photos=photos,
             viewings=viewings,
             tasks=tasks,
-            settings=SyncSettings(webhook_url=self.settings.webhook_url, sync_dir=self.settings.sync_dir),
+            settings=SyncSettings(
+                webhook_url=self.settings.webhook_url,
+                sync_dir=self.settings.sync_dir,
+                export_mode=self.settings.export_mode,
+                export_ics=self.settings.export_ics,
+            ),
         )
+
+    def _run_sync_in_thread(self, *, reason: str = "AUTO") -> None:
+        if self._sync_inflight:
+            return
+        self._sync_inflight = True
+
+        def worker():
+            try:
+                ok, msg = self._export_sync_core()
+            except Exception as exc:
+                ok, msg = False, str(exc)
+
+            def ui_update():
+                self._sync_inflight = False
+                stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                if hasattr(self, "sync_status_var"):
+                    self.sync_status_var.set(f"마지막 동기화: {stamp} / {'성공' if ok else '실패'} ({reason})")
+
+            self.root.after(0, ui_update)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def request_sync(self, *, delay_ms: int = 5000, reason: str = "CHANGE") -> None:
+        if self._sync_after_id is not None:
+            try:
+                self.root.after_cancel(self._sync_after_id)
+            except Exception:
+                pass
+            self._sync_after_id = None
+
+        def _fire():
+            self._sync_after_id = None
+            self._run_sync_in_thread(reason=reason)
+
+        self._sync_after_id = self.root.after(max(100, int(delay_ms)), _fire)
+
+    # -----------------
+    # Sync / Export
+    # -----------------
+    def export_sync(self, *, silent: bool = False):
+        ok, msg = self._export_sync_core()
         stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
         if hasattr(self, "sync_status_var"):
             self.sync_status_var.set(f"마지막 동기화: {stamp} / {'성공' if ok else '실패'}")
@@ -2104,15 +2238,29 @@ class LedgerDesktopApp:
             messagebox.showinfo("동기화", msg)
         else:
             messagebox.showerror("동기화 실패", msg)
-    
-    def start_auto_sync_loop(self):
-        def _run():
-            try:
-                self.export_sync(silent=True)
-            finally:
-                self.root.after(10 * 60 * 1000, _run)
 
-        self.root.after(10 * 60 * 1000, _run)
+    def start_auto_sync_loop(self):
+        self.settings = self._load_settings()
+        if self._auto_sync_after_id is not None:
+            try:
+                self.root.after_cancel(self._auto_sync_after_id)
+            except Exception:
+                pass
+            self._auto_sync_after_id = None
+
+        if not self.settings.auto_sync_on:
+            return
+
+        def _run():
+            self.settings = self._load_settings()
+            if not self.settings.auto_sync_on:
+                self._auto_sync_after_id = None
+                return
+            self._run_sync_in_thread(reason="AUTO")
+            interval = max(10, int(self.settings.auto_sync_sec or 60)) * 1000
+            self._auto_sync_after_id = self.root.after(interval, _run)
+
+        self._auto_sync_after_id = self.root.after(10_000, _run)
 
     def open_export_folder(self):
         self.settings = self._load_settings()
@@ -2211,6 +2359,7 @@ class LedgerDesktopApp:
             data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k, v in vars_.items()}
             # area/pyeong numeric as strings ok; storage converts
             update_property(property_id, data)
+            self.request_sync(reason="PROPERTY_UPDATE")
             self.refresh_all()
 
             linked_tasks = list_tasks(include_done=False, entity_type="PROPERTY", entity_id=property_id)
@@ -2224,12 +2373,14 @@ class LedgerDesktopApp:
 
         def toggle_hide():
             toggle_property_hidden(property_id)
+            self.request_sync(reason="PROPERTY_HIDE")
             messagebox.showinfo("완료", "상태가 변경되었습니다(숨김/보임).")
             self.refresh_all()
 
         def soft_delete():
             if messagebox.askyesno("확인", "삭제 처리(복구 가능) 하시겠습니까?"):
                 soft_delete_property(property_id)
+                self.request_sync(reason="PROPERTY_DELETE")
                 self.refresh_all()
                 win.destroy()
 
@@ -2327,6 +2478,7 @@ class LedgerDesktopApp:
             data = {k: prop.get(k) for k in keys if k in prop}
             if data:
                 update_property(property_id, data)
+                self.request_sync(reason="PROPERTY_IMPORT")
 
             base_dir = Path(json_path).resolve().parent
             imported = 0
@@ -2351,6 +2503,8 @@ class LedgerDesktopApp:
                     if k in refreshed:
                         v.set(refreshed.get(k, ""))
                 row.update(refreshed)
+            if imported:
+                self.request_sync(reason="PHOTO_IMPORT")
             refresh_photos()
             messagebox.showinfo("완료", f"스크립트 불러오기 완료\n사진 {imported}장 등록")
 
@@ -2401,6 +2555,7 @@ class LedgerDesktopApp:
                 current = get_property(property_id)
                 if current and str(current.get("status") or "") == "신규등록":
                     update_property(property_id, {"status": "검수완료(사진등록)"})
+                    self.request_sync(reason="PROPERTY_UPDATE")
                 ph_tag_var.set(PHOTO_TAG_VALUES[0])
                 refresh_photos()
                 self.refresh_properties()
@@ -2475,6 +2630,7 @@ class LedgerDesktopApp:
                 return
             vid = int(vw_tree.item(sel[0], "values")[0])
             update_viewing_status(vid, "완료")
+            self.request_sync(reason="VIEWING_UPDATE")
             refresh_viewings()
             self.refresh_all()
 
@@ -2485,6 +2641,7 @@ class LedgerDesktopApp:
             vid = int(vw_tree.item(sel[0], "values")[0])
             if messagebox.askyesno("확인", "일정 기록을 삭제할까요?"):
                 delete_viewing(vid)
+                self.request_sync(reason="VIEWING_DELETE")
                 refresh_viewings()
                 self.refresh_all()
 
@@ -2559,6 +2716,7 @@ class LedgerDesktopApp:
                 status="예정",
             )
             on_saved()
+            self.request_sync(reason="VIEWING_ADD")
             self.refresh_all()
             win.destroy()
 
@@ -2628,12 +2786,14 @@ class LedgerDesktopApp:
 
         def toggle_hide():
             toggle_customer_hidden(customer_id)
+            self.request_sync(reason="CUSTOMER_HIDE")
             messagebox.showinfo("완료", "숨김/보임이 변경되었습니다.")
             self.refresh_all()
 
         def soft_delete():
             if messagebox.askyesno("확인", "삭제 처리(복구 가능) 하시겠습니까?"):
                 soft_delete_customer(customer_id)
+                self.request_sync(reason="CUSTOMER_DELETE")
                 self.refresh_all()
                 win.destroy()
 

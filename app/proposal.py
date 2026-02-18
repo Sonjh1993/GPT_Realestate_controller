@@ -33,7 +33,9 @@ try:
         PageBreak,
         Paragraph,
         SimpleDocTemplate,
-        Spacer
+        Spacer,
+        Table,
+        TableStyle,
     )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
@@ -129,7 +131,7 @@ def generate_proposal_pdf(
     photos_by_property: dict[int, list[dict[str, str] | str]] | None,
     output_dir: Path,
     title: str = "매물 제안서",
-    max_photos_per_property: int = 4,
+    max_photos_per_property: int = 6,
 ) -> ProposalOutput:
     """Generate proposal PDF + txt message into output_dir."""
     _ensure_reportlab()
@@ -295,12 +297,37 @@ def generate_proposal_pdf(
 
         priority = {"거실": 0, "안방": 1, "작은방": 2, "화장실": 3, "주방": 4}
         normalized.sort(key=lambda x: (priority.get(x.get("tag", ""), 99), x.get("tag", "")))
-        chosen = normalized[:max_photos_per_property]
+        chosen = normalized[: min(max_photos_per_property, 6)]
 
         if chosen:
-            for it in chosen[:3]:
-                elements.append(build_image(str(it.get("file_path") or ""), max_w_mm=55, max_h_mm=44))
-                elements.append(Paragraph(str(it.get("tag") or "사진"), style_small))
+            page_w, _ = A4
+            avail = page_w - doc.leftMargin - doc.rightMargin
+            col_w = avail / 3
+            rows = [chosen[i:i+3] for i in range(0, len(chosen), 3)]
+
+            table_data: list[list[Any]] = []
+            for r in rows[:2]:
+                img_row: list[Any] = []
+                cap_row: list[Any] = []
+                for it in r:
+                    img_row.append(build_image(str(it.get("file_path") or ""), max_w_mm=(col_w / mm) - 6, max_h_mm=42))
+                    cap_row.append(Paragraph(str(it.get("tag") or "사진"), style_small))
+                while len(img_row) < 3:
+                    img_row.append(Spacer(1, 1))
+                    cap_row.append(Spacer(1, 1))
+                table_data.append(img_row)
+                table_data.append(cap_row)
+
+            img_table = Table(table_data, colWidths=[col_w, col_w, col_w])
+            img_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(img_table)
             elements.append(Spacer(1, 8))
         else:
             elements.append(Paragraph("사진 없음", style_small))

@@ -41,12 +41,16 @@ def _visible_only(rows: list[dict]) -> list[dict]:
 class SyncSettings:
     webhook_url: str = ""
     sync_dir: Path = DEFAULT_SYNC_DIR
+    export_mode: str = "single"  # single / advanced
+    export_ics: bool = False
 
     @staticmethod
     def from_env() -> "SyncSettings":
         webhook_url = os.getenv("GOOGLE_SHEETS_WEBHOOK_URL", "").strip()
         sync_dir = Path(os.getenv("GOOGLE_DRIVE_SYNC_DIR", str(DEFAULT_SYNC_DIR))).expanduser()
-        return SyncSettings(webhook_url=webhook_url, sync_dir=sync_dir)
+        export_mode = os.getenv("EXPORT_MODE", "single").strip() or "single"
+        export_ics = os.getenv("EXPORT_ICS", "0").strip() in {"1", "true", "True", "on", "ON"}
+        return SyncSettings(webhook_url=webhook_url, sync_dir=sync_dir, export_mode=export_mode, export_ics=export_ics)
 
 
 def upload_visible_data(
@@ -82,11 +86,34 @@ def upload_visible_data(
         photos=photos,
         viewings=viewings,
         tasks=tasks,
+        mode=settings.export_mode,
+        export_ics=settings.export_ics,
     )
 
     # 2) Optional webhook upload
     webhook_ok = None
     webhook_msg = ""
+    if settings.webhook_url:
+        webhook_ok, webhook_msg = _post_webhook(
+            settings.webhook_url,
+            {
+                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
+                "properties": visible_props,
+                "customers": visible_customers,
+                "viewings": viewings,
+                "tasks": tasks,
+            },
+        )
+
+    # 메시지 조립
+    msg = f"파일 내보내기 완료: {exported['base_dir']}"
+    if exported.get("snapshot_json"):
+        msg += f"\n- snapshot: {exported['snapshot_json'].name}"
+    if exported.get("properties_csv"):
+        msg += "\n- CSV: properties/customers/tasks"
+    if exported.get("ics"):
+        msg += f"\n- calendar: {exported['ics'].name}"
+
     if settings.webhook_url:
         webhook_ok, webhook_msg = _post_webhook(
             settings.webhook_url,
@@ -124,32 +151,21 @@ def export_all(
     photos: list[dict],
     viewings: list[dict],
     tasks: list[dict],
+    mode: str = "single",
+    export_ics: bool = False,
 ) -> dict[str, Any]:
-    """Create CSV + JSON snapshot + ICS into sync_dir.
+    """Create exports into sync_dir.
 
-    구조
-    ----
-    sync_dir/
-      exports/
-        snapshot.json
-        visible_properties.csv
-        visible_customers.csv
-        viewings.ics
+    mode == "single":
+      exports/ledger_snapshot.json only (기본)
+    mode == "advanced":
+      snapshot + CSV + optional ICS
     """
 
     base = sync_dir / "exports"
     base.mkdir(parents=True, exist_ok=True)
 
-    prop_csv = base / "visible_properties.csv"
-    cust_csv = base / "visible_customers.csv"
-    snapshot_json = base / "snapshot.json"
-    ics_file = base / "viewings.ics"
-    tasks_csv = base / "open_tasks.csv"
-
-    _write_csv(prop_csv, properties)
-    _write_csv(cust_csv, customers)
-    _write_csv(tasks_csv, tasks)
-
+    snapshot_json = base / "ledger_snapshot.json"
     snapshot = {
         "exported_at": datetime.now().isoformat(timespec="seconds"),
         "properties": properties,
@@ -160,16 +176,30 @@ def export_all(
     }
     snapshot_json.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    ics_file.write_text(_to_ics(viewings), encoding="utf-8")
-
-    return {
+    out: dict[str, Any] = {
         "base_dir": base,
-        "properties_csv": prop_csv,
-        "customers_csv": cust_csv,
         "snapshot_json": snapshot_json,
-        "ics": ics_file,
-        "tasks_csv": tasks_csv,
     }
+
+    if mode == "advanced":
+        prop_csv = base / "visible_properties.csv"
+        cust_csv = base / "visible_customers.csv"
+        tasks_csv = base / "open_tasks.csv"
+        _write_csv(prop_csv, properties)
+        _write_csv(cust_csv, customers)
+        _write_csv(tasks_csv, tasks)
+        out["properties_csv"] = prop_csv
+        out["customers_csv"] = cust_csv
+        out["tasks_csv"] = tasks_csv
+
+    if export_ics:
+        ics_dir = base / ("_calendar" if mode == "single" else "")
+        ics_dir.mkdir(parents=True, exist_ok=True)
+        ics_file = ics_dir / "viewings.ics"
+        ics_file.write_text(_to_ics(viewings), encoding="utf-8")
+        out["ics"] = ics_file
+
+    return out
 
 
 def _write_csv(path: Path, rows: list[dict]) -> None:
