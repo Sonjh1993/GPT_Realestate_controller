@@ -35,7 +35,8 @@ def fmt_10m(n_10m: Any) -> str:
 
 
 def fmt_10man(n_10man: Any) -> str:
-    return f"{max(0, to_int(n_10man, 0))}십만원"
+    # 내부 저장은 10만원 단위이지만, 사용자 표기는 만원 단위로 보여준다.
+    return f"{ten_man_to_man(n_10man)}만원"
 
 
 def property_price_summary(row: dict[str, Any]) -> str:
