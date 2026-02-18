@@ -168,7 +168,13 @@ def init_db() -> None:
             updated_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
-        
+        CREATE TABLE IF NOT EXISTS presets (
+            slot INTEGER PRIMARY KEY,
+            name TEXT,
+            payload_json TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
 CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     unique_key TEXT,
@@ -328,6 +334,37 @@ def set_setting(key: str, value: str) -> None:
         "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
         (key, value, _now_ts()),
     )
+    conn.commit()
+    conn.close()
+
+
+def list_presets() -> list[dict[str, Any]]:
+    conn = connect()
+    rows = conn.execute("SELECT slot, name, payload_json, updated_at FROM presets ORDER BY slot ASC").fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def upsert_preset(slot: int, name: str, payload: dict[str, Any]) -> None:
+    conn = connect()
+    conn.execute(
+        """
+        INSERT INTO presets(slot, name, payload_json, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(slot) DO UPDATE SET
+            name=excluded.name,
+            payload_json=excluded.payload_json,
+            updated_at=excluded.updated_at
+        """,
+        (int(slot), name, json.dumps(payload, ensure_ascii=False), _now_ts()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def delete_preset(slot: int) -> None:
+    conn = connect()
+    conn.execute("DELETE FROM presets WHERE slot=?", (int(slot),))
     conn.commit()
     conn.close()
 
