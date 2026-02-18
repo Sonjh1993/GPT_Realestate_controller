@@ -186,6 +186,7 @@ class LedgerDesktopApp:
         self._build_property_ui()
         self._build_customer_ui()
         self._build_settings_ui()
+        self._attach_notebook_underline(self.main)
 
         self._bind_global_shortcuts()
         self.refresh_all()
@@ -213,13 +214,18 @@ class LedgerDesktopApp:
             pass
 
         self.palette = {
-            "bg": "#F8FAFC",
+            "bg": "#F7F9FB",
             "surface": "#FFFFFF",
-            "text": "#111827",
-            "muted": "#6B7280",
-            "border": "#CBD5E1",
-            "accent": "#2563EB",
-            "danger": "#B91C1C",
+            "text": "#0F172A",
+            "muted": "#64748B",
+            "border": "#D6DEE8",
+            "theme": "#0EA5A4",
+            "theme_dark": "#0F766E",
+            "theme_soft": "#E6FFFB",
+            "theme_border": "#5EEAD4",
+            "danger_bg": "#FEE2E2",
+            "danger_fg": "#B91C1C",
+            "danger_border": "#FCA5A5",
         }
 
         style = ttk.Style(self.root)
@@ -238,24 +244,24 @@ class LedgerDesktopApp:
         style.configure("TButton", font=(family, base_size), padding=(10, 6), borderwidth=1)
         style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
         style.map("Secondary.TButton", background=[("active", "#F0F4FA")])
-        style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["accent"], foreground="#FFFFFF", bordercolor=self.palette["accent"])
-        style.map("Primary.TButton", background=[("active", "#285FD0")])
-        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background="#FEE2E2", foreground=self.palette["danger"], bordercolor="#FCA5A5")
+        style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["theme"], foreground="#FFFFFF", bordercolor=self.palette["theme"])
+        style.map("Primary.TButton", background=[("active", self.palette["theme_dark"])])
+        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["danger_bg"], foreground=self.palette["danger_fg"], bordercolor=self.palette["danger_border"])
         style.map("Danger.TButton", background=[("active", "#FECACA")])
 
         style.configure("TEntry", fieldbackground=self.palette["surface"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
-        style.configure("TCombobox", fieldbackground="#FFFFFF", background="#FFFFFF", bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"], arrowsize=14)
-        style.map("TCombobox", bordercolor=[("focus", self.palette["accent"])], fieldbackground=[("readonly", "#FFFFFF"), ("!disabled", "#FFFFFF")], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", "#DBEAFE")], selectforeground=[("readonly", self.palette["text"])])
+        style.configure("TCombobox", fieldbackground=self.palette["surface"], background=self.palette["surface"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"], arrowsize=14)
+        style.map("TCombobox", bordercolor=[("focus", self.palette["theme_border"])], fieldbackground=[("readonly", self.palette["surface"]), ("!disabled", self.palette["surface"])], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", self.palette["theme_soft"])], selectforeground=[("readonly", self.palette["text"])])
         style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
 
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
-        style.configure("TNotebook.Tab", font=(family, base_size), padding=(10, 4), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
+        style.configure("TNotebook.Tab", font=(family, base_size), padding=(8, 3), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
         style.map("TNotebook.Tab", background=[("selected", self.palette["bg"])], foreground=[("selected", self.palette["text"])])
 
         style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["surface"], fieldbackground=self.palette["surface"], foreground=self.palette["text"], bordercolor=self.palette["border"])
         style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["surface"], foreground=self.palette["text"], relief="flat")
-        style.map("Treeview", background=[("selected", self.palette["accent"])], foreground=[("selected", "#FFFFFF")])
+        style.map("Treeview", background=[("selected", self.palette["theme_soft"])], foreground=[("selected", self.palette["text"])])
 
     def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
         try:
@@ -325,6 +331,27 @@ class LedgerDesktopApp:
             tree.tag_configure("even", background=self.palette["surface"])
         except Exception:
             pass
+
+    def _attach_notebook_underline(self, nb: ttk.Notebook) -> None:
+        line = tk.Frame(nb, bg=self.palette["theme"], height=2)
+
+        def _refresh(_e=None):
+            try:
+                current = nb.select()
+                if not current:
+                    line.place_forget()
+                    return
+                x, y, w, h = nb.bbox(current)
+                if w <= 0:
+                    line.place_forget()
+                    return
+                line.place(x=x + 2, y=y + h - 2, width=max(8, w - 4), height=2)
+            except Exception:
+                line.place_forget()
+
+        nb.bind("<<NotebookTabChanged>>", _refresh, add="+")
+        nb.bind("<Configure>", _refresh, add="+")
+        nb.after(30, _refresh)
 
     def _snapshot_tree_state(self, tree: ttk.Treeview) -> tuple[tuple[str, ...], float]:
         selected = tuple(tree.selection())
@@ -589,8 +616,10 @@ class LedgerDesktopApp:
     # Dashboard
     # -----------------
     def _build_dashboard_ui(self):
-        top = ttk.LabelFrame(self.dashboard_tab, text="오늘의 운영")
+        top = ttk.Frame(self.dashboard_tab)
         top.pack(fill="x", padx=10, pady=10)
+        ttk.Label(top, text="오늘의 운영", style="TLabelframe.Label").grid(row=0, column=0, columnspan=10, sticky="w", padx=6, pady=(0, 2))
+        ttk.Separator(top, orient="horizontal").grid(row=1, column=0, columnspan=10, sticky="ew", padx=6, pady=(0, 6))
 
         self.dash_vars = {
             "props_total": tk.StringVar(value="0"),
@@ -600,7 +629,7 @@ class LedgerDesktopApp:
             "tasks_open": tk.StringVar(value="0"),
         }
 
-        row = 0
+        row = 2
         ttk.Label(top, text="물건(전체)").grid(row=row, column=0, padx=6, pady=6, sticky="e")
         ttk.Label(top, textvariable=self.dash_vars["props_total"]).grid(row=row, column=1, padx=6, pady=6, sticky="w")
 
@@ -617,10 +646,10 @@ class LedgerDesktopApp:
         ttk.Label(top, textvariable=self.dash_vars["tasks_open"]).grid(row=row, column=9, padx=6, pady=6, sticky="w")
 
         self.sync_status_var = tk.StringVar(value="마지막 동기화: 없음")
-        ttk.Label(top, textvariable=self.sync_status_var, foreground="#2f4f4f").grid(row=1, column=0, columnspan=10, sticky="w", padx=6, pady=2)
+        ttk.Label(top, textvariable=self.sync_status_var, foreground="#2f4f4f").grid(row=3, column=0, columnspan=10, sticky="w", padx=6, pady=2)
 
         btns = ttk.Frame(top)
-        btns.grid(row=2, column=0, columnspan=10, sticky="w", padx=6, pady=6)
+        btns.grid(row=4, column=0, columnspan=10, sticky="w", padx=6, pady=6)
         ttk.Button(btns, text="내보내기/동기화(Drive/웹훅)", command=self.export_sync).pack(side="left", padx=4)
         ttk.Button(btns, text="내보내기 폴더 열기", command=self.open_export_folder).pack(side="left", padx=4)
 
@@ -628,8 +657,10 @@ class LedgerDesktopApp:
         pw = ttk.PanedWindow(self.dashboard_tab, orient=tk.HORIZONTAL)
         pw.pack(fill="both", expand=True, padx=10, pady=10)
 
-        task_frame = ttk.LabelFrame(pw, text="할 일(Next Action)")
+        task_frame = ttk.Frame(pw)
         pw.add(task_frame, weight=1)
+        ttk.Label(task_frame, text="할 일(Next Action)", style="TLabelframe.Label").pack(anchor="w", padx=6, pady=(4, 2))
+        ttk.Separator(task_frame, orient="horizontal").pack(fill="x", padx=6, pady=(0, 6))
 
         # ---- Tasks
         tctrl = ttk.Frame(task_frame)
@@ -1387,6 +1418,7 @@ class LedgerDesktopApp:
         self.inner_tabs = ttk.Notebook(self.property_tab)
         self.inner_tabs.pack(fill="both", expand=True, padx=10, pady=8)
         self.inner_tabs.bind("<<NotebookTabChanged>>", self._on_property_tab_changed)
+        self._attach_notebook_underline(self.inner_tabs)
         self.prop_trees: dict[str, ttk.Treeview] = {}
 
         cols = ("status", "complex_name", "address_detail", "contact", "unit_type", "floor", "price_summary", "updated_at")
@@ -2134,6 +2166,7 @@ class LedgerDesktopApp:
 
         self.customer_nb = ttk.Notebook(self.customer_tab)
         self.customer_nb.pack(fill="both", expand=True, padx=10, pady=8)
+        self._attach_notebook_underline(self.customer_nb)
         self.customer_trees: dict[str, ttk.Treeview] = {}
 
         for tab_name in ["전체", *PROPERTY_TABS]:
@@ -2571,8 +2604,10 @@ class LedgerDesktopApp:
         ttk.Button(btns, text="삭제", command=delete_it).pack(side="left", padx=4)
 
     def _build_settings_ui(self):
-        box = ttk.LabelFrame(self.settings_tab, text="동기화 설정(관리자)")
+        box = ttk.Frame(self.settings_tab)
         box.pack(fill="x", padx=10, pady=10)
+        ttk.Label(box, text="동기화 설정(관리자)", style="TLabelframe.Label").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 2))
+        ttk.Separator(box, orient="horizontal").grid(row=1, column=0, columnspan=3, sticky="ew", pady=(0, 8))
 
         self.set_sync_dir_var = tk.StringVar(value=str(self.settings.sync_dir))
         self.set_webhook_var = tk.StringVar(value=self.settings.webhook_url)
@@ -2581,32 +2616,32 @@ class LedgerDesktopApp:
         self.set_export_mode_var = tk.StringVar(value="단일파일 추천" if self.settings.export_mode == "single" else "고급(CSV/ICS 포함)")
         self.set_export_ics_var = tk.BooleanVar(value=bool(self.settings.export_ics))
 
-        ttk.Label(box, text="Drive 동기화 폴더").grid(row=0, column=0, padx=6, pady=6, sticky="e")
-        ttk.Entry(box, textvariable=self.set_sync_dir_var, width=80).grid(row=0, column=1, padx=6, pady=6, sticky="w")
-        ttk.Button(box, text="폴더 선택", command=self.browse_sync_dir).grid(row=0, column=2, padx=6, pady=6)
+        ttk.Label(box, text="Drive 동기화 폴더").grid(row=2, column=0, padx=6, pady=6, sticky="e")
+        ttk.Entry(box, textvariable=self.set_sync_dir_var, width=80).grid(row=2, column=1, padx=6, pady=6, sticky="w")
+        ttk.Button(box, text="폴더 선택", style="Secondary.TButton", command=self.browse_sync_dir).grid(row=2, column=2, padx=6, pady=6)
 
-        ttk.Label(box, text="(선택) Sheets 웹훅 URL").grid(row=1, column=0, padx=6, pady=6, sticky="e")
-        ttk.Entry(box, textvariable=self.set_webhook_var, width=80).grid(row=1, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(box, text="(선택) Sheets 웹훅 URL").grid(row=3, column=0, padx=6, pady=6, sticky="e")
+        ttk.Entry(box, textvariable=self.set_webhook_var, width=80).grid(row=3, column=1, padx=6, pady=6, sticky="w")
 
-        ttk.Checkbutton(box, text="자동 동기화 사용", variable=self.set_auto_sync_on_var).grid(row=2, column=1, padx=6, pady=6, sticky="w")
-        ttk.Label(box, text="자동 동기화 주기(초)").grid(row=3, column=0, padx=6, pady=6, sticky="e")
-        ttk.Spinbox(box, from_=10, to=3600, increment=10, textvariable=self.set_auto_sync_sec_var, width=10).grid(row=3, column=1, padx=6, pady=6, sticky="w")
+        ttk.Checkbutton(box, text="자동 동기화 사용", variable=self.set_auto_sync_on_var).grid(row=4, column=1, padx=6, pady=6, sticky="w")
+        ttk.Label(box, text="자동 동기화 주기(초)").grid(row=5, column=0, padx=6, pady=6, sticky="e")
+        ttk.Spinbox(box, from_=10, to=3600, increment=10, textvariable=self.set_auto_sync_sec_var, width=10).grid(row=5, column=1, padx=6, pady=6, sticky="w")
 
-        ttk.Label(box, text="내보내기 모드").grid(row=4, column=0, padx=6, pady=6, sticky="e")
+        ttk.Label(box, text="내보내기 모드").grid(row=6, column=0, padx=6, pady=6, sticky="e")
         ttk.Combobox(
             box,
             textvariable=self.set_export_mode_var,
             values=["단일파일 추천", "고급(CSV/ICS 포함)"],
             state="readonly",
             width=24,
-        ).grid(row=4, column=1, padx=6, pady=6, sticky="w")
-        ttk.Checkbutton(box, text="캘린더(ICS) 내보내기", variable=self.set_export_ics_var).grid(row=5, column=1, padx=6, pady=6, sticky="w")
+        ).grid(row=6, column=1, padx=6, pady=6, sticky="w")
+        ttk.Checkbutton(box, text="캘린더(ICS) 내보내기", variable=self.set_export_ics_var).grid(row=7, column=1, padx=6, pady=6, sticky="w")
 
         btns = ttk.Frame(box)
-        btns.grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=6)
-        ttk.Button(btns, text="저장", command=self.save_settings).pack(side="left", padx=4)
-        ttk.Button(btns, text="내보내기/동기화 실행", command=self.export_sync).pack(side="left", padx=4)
-        ttk.Button(btns, text="폴더 열기", command=lambda: _open_folder(Path(self.set_sync_dir_var.get()).expanduser())).pack(side="left", padx=4)
+        btns.grid(row=8, column=0, columnspan=3, sticky="w", padx=6, pady=6)
+        ttk.Button(btns, text="저장", style="Primary.TButton", command=self.save_settings).pack(side="left", padx=4)
+        ttk.Button(btns, text="내보내기/동기화 실행", style="Secondary.TButton", command=self.export_sync).pack(side="left", padx=4)
+        ttk.Button(btns, text="폴더 열기", style="Secondary.TButton", command=lambda: _open_folder(Path(self.set_sync_dir_var.get()).expanduser())).pack(side="left", padx=4)
 
         hint = ttk.Label(
             self.settings_tab,
@@ -2922,8 +2957,10 @@ class LedgerDesktopApp:
         self._set_initial_focus(win, form_widgets[0] if form_widgets else None)
 
         # ---- photos tab
-        ph_box = ttk.LabelFrame(tab_photos, text="사진")
+        ph_box = ttk.Frame(tab_photos)
         ph_box.pack(fill="both", expand=True, padx=10, pady=10)
+        ttk.Label(ph_box, text="사진", style="TLabelframe.Label").pack(anchor="w", pady=(0,2))
+        ttk.Separator(ph_box, orient="horizontal").pack(fill="x", pady=(0,6))
 
         ph_cols = ("id", "tag", "file_path", "created_at")
         ph_tree = ttk.Treeview(ph_box, columns=ph_cols, show="headings", height=18)
@@ -3002,8 +3039,10 @@ class LedgerDesktopApp:
         refresh_photos()
 
         # ---- viewings tab
-        vw_box = ttk.LabelFrame(tab_viewings, text="일정(캘린더 API 없이도 저장/내보내기 가능)")
+        vw_box = ttk.Frame(tab_viewings)
         vw_box.pack(fill="both", expand=True, padx=10, pady=10)
+        ttk.Label(vw_box, text="일정(캘린더 API 없이도 저장/내보내기 가능)", style="TLabelframe.Label").pack(anchor="w", pady=(0,2))
+        ttk.Separator(vw_box, orient="horizontal").pack(fill="x", pady=(0,6))
 
         vw_cols = ("id", "start_at", "end_at", "title", "customer_id", "status")
         vw_tree = ttk.Treeview(vw_box, columns=vw_cols, show="headings", height=18)
