@@ -2790,7 +2790,8 @@ class LedgerDesktopApp:
         self._set_current_property(row)
         win = tk.Toplevel(self.root)
         win.title(f"물건 상세 - ID {property_id}")
-        self._fit_toplevel(win, 1100, 760)
+        self._fit_toplevel(win, 1120, 740)
+        win.minsize(1120, 740)
 
         nb = ttk.Notebook(win)
         nb.pack(fill="both", expand=True)
@@ -2834,7 +2835,8 @@ class LedgerDesktopApp:
         right = ttk.Frame(split, style="TFrame")
         split.add(left, weight=1)
         split.add(right, weight=0)
-        right.configure(width=260)
+        right.configure(width=240)
+        right.pack_propagate(False)
 
         left_head = ttk.Frame(left)
         left_head.pack(fill="x")
@@ -2848,28 +2850,28 @@ class LedgerDesktopApp:
             widget.grid(row=r, column=c + 1, padx=8, pady=6, sticky="ew")
 
         # row 0
-        add_row(0, 0, "탭", ttk.Entry(form, textvariable=vars_["tab"], width=24, state="readonly"))
-        add_row(0, 2, "단지명", ttk.Entry(form, textvariable=vars_["complex_name"], width=36))
-        add_row(0, 4, "상태", ttk.Combobox(form, textvariable=vars_["status"], width=18, state="readonly", values=PROPERTY_STATUS_VALUES))
+        add_row(0, 0, "탭", ttk.Entry(form, textvariable=vars_["tab"], width=12, state="readonly"))
+        add_row(0, 2, "단지명", ttk.Entry(form, textvariable=vars_["complex_name"], width=20))
+        add_row(0, 4, "상태", ttk.Combobox(form, textvariable=vars_["status"], width=12, state="readonly", values=PROPERTY_STATUS_VALUES))
 
         for c in (1, 3, 5):
-            form.columnconfigure(c, weight=1)
+            form.columnconfigure(c, weight=0, minsize=180)
 
-        add_row(1, 0, "연락처", ttk.Entry(form, textvariable=vars_["contact_display"], width=24, state="readonly"))
-        add_row(1, 2, "동/호(상세)", ttk.Entry(form, textvariable=vars_["address_detail"], width=24))
-        add_row(1, 4, "면적타입", ttk.Entry(form, textvariable=vars_["unit_type"], width=18))
+        add_row(1, 0, "연락처", ttk.Entry(form, textvariable=vars_["contact_display"], width=14, state="readonly"))
+        add_row(1, 2, "동/호(상세)", ttk.Entry(form, textvariable=vars_["address_detail"], width=16))
+        add_row(1, 4, "면적타입", ttk.Entry(form, textvariable=vars_["unit_type"], width=12))
 
-        add_row(2, 0, "층/총층", ttk.Entry(form, textvariable=vars_["floor"], width=10))
-        add_row(2, 2, "면적(㎡)", ttk.Entry(form, textvariable=vars_["area"], width=18))
-        add_row(2, 4, "평형", ttk.Entry(form, textvariable=vars_["pyeong"], width=18))
+        add_row(2, 0, "층/총층", ttk.Entry(form, textvariable=vars_["floor"], width=8))
+        add_row(2, 2, "면적(㎡)", ttk.Entry(form, textvariable=vars_["area"], width=12))
+        add_row(2, 4, "평형", ttk.Entry(form, textvariable=vars_["pyeong"], width=12))
 
-        add_row(3, 0, "컨디션", ttk.Combobox(form, textvariable=vars_["condition"], width=18, state="readonly", values=["상", "중", "하"]))
-        add_row(3, 2, "조망/뷰", ttk.Entry(form, textvariable=vars_["view"], width=24))
-        add_row(3, 4, "향", ttk.Entry(form, textvariable=vars_["orientation"], width=18))
+        add_row(3, 0, "컨디션", ttk.Combobox(form, textvariable=vars_["condition"], width=12, state="readonly", values=["상", "중", "하"]))
+        add_row(3, 2, "조망/뷰", ttk.Entry(form, textvariable=vars_["view"], width=16))
+        add_row(3, 4, "향", ttk.Entry(form, textvariable=vars_["orientation"], width=12))
         ttk.Checkbutton(form, text="수리필요", variable=vars_["repair_needed"]).grid(row=4, column=0, padx=8, pady=6, sticky="w")
 
-        add_row(5, 0, "세입자정보", ttk.Entry(form, textvariable=vars_["tenant_info"], width=64))
-        link_entry = ttk.Entry(form, textvariable=vars_["naver_link"], width=64)
+        add_row(5, 0, "세입자정보", ttk.Entry(form, textvariable=vars_["tenant_info"], width=30))
+        link_entry = ttk.Entry(form, textvariable=vars_["naver_link"], width=26)
         add_row(6, 0, "네이버링크", link_entry)
 
         notes_expanded = {"v": True}
@@ -2879,12 +2881,12 @@ class LedgerDesktopApp:
         notes_frame.columnconfigure(1, weight=1)
 
         ttk.Label(notes_frame, text="특이사항").grid(row=0, column=0, padx=8, pady=6, sticky="ne")
-        special_txt = tk.Text(notes_frame, height=5, wrap="word")
+        special_txt = tk.Text(notes_frame, height=4, wrap="word")
         special_txt.insert("1.0", str(vars_["special_notes"].get() or ""))
         special_txt.grid(row=0, column=1, padx=8, pady=6, sticky="nsew")
 
         ttk.Label(notes_frame, text="별도기재").grid(row=1, column=0, padx=8, pady=6, sticky="ne")
-        note_txt = tk.Text(notes_frame, height=5, wrap="word")
+        note_txt = tk.Text(notes_frame, height=4, wrap="word")
         note_txt.insert("1.0", str(vars_["note"].get() or ""))
         note_txt.grid(row=1, column=1, padx=8, pady=6, sticky="nsew")
         notes_frame.rowconfigure(0, weight=1)
@@ -3247,21 +3249,23 @@ class LedgerDesktopApp:
         self._set_current_customer(row)
         win = tk.Toplevel(self.root)
         win.title(f"고객 상세 - ID {customer_id}")
-        self._fit_toplevel(win, 980, 700)
+        self._fit_toplevel(win, 1200, 760)
+        win.minsize(1040, 700)
 
         vars_ = {k: tk.StringVar(value=str(row.get(k, "") or "")) for k in row.keys()}
 
         wrapper = ttk.Frame(win)
         wrapper.pack(fill="both", expand=True, padx=10, pady=10)
         wrapper.columnconfigure(0, weight=1)
-        wrapper.columnconfigure(1, weight=0, minsize=260)
+        wrapper.columnconfigure(1, weight=0, minsize=240)
         wrapper.rowconfigure(0, weight=1)
 
         left = ttk.Frame(wrapper)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         right = ttk.Frame(wrapper)
         right.grid(row=0, column=1, sticky="ns")
-        right.configure(width=260)
+        right.configure(width=240)
+        right.pack_propagate(False)
 
         left_head = ttk.Frame(left)
         left_head.grid(row=0, column=0, columnspan=6, sticky="ew")
