@@ -2466,12 +2466,69 @@ class LedgerDesktopApp:
             messagebox.showinfo("완료", f"스크립트 생성 완료\n{out_dir}")
             _open_folder(out_dir)
 
+        def import_script_bundle():
+            json_path = filedialog.askopenfilename(
+                title="불러올 data.json 선택",
+                filetypes=[("JSON", "*.json"), ("모든 파일", "*.*")],
+                initialdir=str(Path.home() / "Desktop" / "Google Drive" / "real_estate_note" / "scripts"),
+            )
+            if not json_path:
+                return
+            try:
+                payload = json.loads(Path(json_path).read_text(encoding="utf-8"))
+            except Exception as e:
+                messagebox.showerror("오류", f"JSON 읽기 실패: {e}")
+                return
+
+            prop = payload.get("property") if isinstance(payload, dict) else None
+            if not isinstance(prop, dict):
+                messagebox.showerror("오류", "올바른 data.json 형식이 아닙니다.")
+                return
+
+            keys = [
+                "property_type", "tab_name", "complex_name", "address", "address_detail", "owner_phone",
+                "deal_sale", "price_sale_eok", "price_sale_che", "deal_jeonse", "price_jeonse_eok", "price_jeonse_che",
+                "deal_wolse", "wolse_deposit_eok", "wolse_deposit_che", "wolse_rent_man",
+                "unit_type", "area", "pyeong", "floor", "total_floor", "orientation", "view",
+                "move_available_date", "status", "condition", "special_notes", "memo", "naver_link",
+            ]
+            data = {k: prop.get(k) for k in keys if k in prop}
+            if data:
+                update_property(property_id, data)
+
+            base_dir = Path(json_path).resolve().parent
+            imported = 0
+            for item in (payload.get("photos") or []):
+                if not isinstance(item, dict):
+                    continue
+                rel_file = str(item.get("file") or "").strip()
+                if not rel_file:
+                    continue
+                src = (base_dir / "photos" / rel_file).resolve()
+                if not src.exists() or not src.is_file():
+                    continue
+                tag = str(item.get("tag") or PHOTO_TAG_VALUES[0]).strip() or PHOTO_TAG_VALUES[0]
+                new_path = self._copy_photo_to_library(src, property_id, tag)
+                add_photo(property_id, str(new_path), tag)
+                imported += 1
+
+            self.refresh_all()
+            refreshed = get_property(property_id, include_deleted=True)
+            if refreshed:
+                for k, v in vars_.items():
+                    if k in refreshed:
+                        v.set(refreshed.get(k, ""))
+                row.update(refreshed)
+            refresh_photos()
+            messagebox.showinfo("완료", f"스크립트 불러오기 완료\n사진 {imported}장 등록")
+
         ttk.Button(actions, text="저장", command=save_changes).pack(side="left", padx=4)
         ttk.Button(actions, text="네이버 링크 열기", command=open_link).pack(side="left", padx=4)
         ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
         ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
         ttk.Button(actions, text="할 일 추가", command=lambda: self.open_add_task_window(default_entity_type="PROPERTY", default_entity_id=property_id)).pack(side="left", padx=4)
         ttk.Button(actions, text="스크립트 만들기", command=make_script_bundle).pack(side="left", padx=4)
+        ttk.Button(actions, text="스크립트 불러오기", command=import_script_bundle).pack(side="left", padx=4)
 
         # ---- photos tab
         ph_box = ttk.LabelFrame(tab_photos, text="사진")
