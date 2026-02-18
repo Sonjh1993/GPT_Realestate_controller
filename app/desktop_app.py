@@ -214,7 +214,7 @@ class LedgerDesktopApp:
 
         self.palette = {
             "bg": "#F8FAFC",
-            "panel": "#FFFFFF",
+            "surface": "#FFFFFF",
             "text": "#111827",
             "muted": "#6B7280",
             "border": "#CBD5E1",
@@ -230,31 +230,31 @@ class LedgerDesktopApp:
 
         style.configure(".", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TFrame", background=self.palette["bg"])
-        style.configure("TLabelframe", background=self.palette["panel"], bordercolor=self.palette["border"], relief="solid")
-        style.configure("TLabelframe.Label", background=self.palette["panel"], foreground=self.palette["text"], font=(family, heading_size, "bold"))
+        style.configure("TLabelframe", background=self.palette["bg"], bordercolor=self.palette["bg"], relief="flat", borderwidth=0)
+        style.configure("TLabelframe.Label", background=self.palette["bg"], foreground=self.palette["text"], font=(family, heading_size, "bold"))
         style.configure("TLabel", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("Muted.TLabel", background=self.palette["bg"], foreground=self.palette["muted"], font=(family, base_size))
 
         style.configure("TButton", font=(family, base_size), padding=(10, 6), borderwidth=1)
-        style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["panel"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
         style.map("Secondary.TButton", background=[("active", "#F0F4FA")])
         style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["accent"], foreground="#FFFFFF", bordercolor=self.palette["accent"])
         style.map("Primary.TButton", background=[("active", "#285FD0")])
         style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background="#FEE2E2", foreground=self.palette["danger"], bordercolor="#FCA5A5")
         style.map("Danger.TButton", background=[("active", "#FECACA")])
 
-        style.configure("TEntry", fieldbackground=self.palette["panel"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
+        style.configure("TEntry", fieldbackground=self.palette["surface"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
         style.configure("TCombobox", fieldbackground="#FFFFFF", background="#FFFFFF", bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"], arrowsize=14)
         style.map("TCombobox", bordercolor=[("focus", self.palette["accent"])], fieldbackground=[("readonly", "#FFFFFF"), ("!disabled", "#FFFFFF")], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", "#DBEAFE")], selectforeground=[("readonly", self.palette["text"])])
         style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
 
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
-        style.configure("TNotebook.Tab", font=(family, base_size), padding=(12, 6), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0)
+        style.configure("TNotebook.Tab", font=(family, base_size), padding=(10, 4), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
         style.map("TNotebook.Tab", background=[("selected", self.palette["bg"])], foreground=[("selected", self.palette["text"])])
 
-        style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["panel"], fieldbackground=self.palette["panel"], foreground=self.palette["text"], bordercolor=self.palette["border"])
-        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background="#EEF3FA", foreground=self.palette["text"], relief="flat")
+        style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["surface"], fieldbackground=self.palette["surface"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["surface"], foreground=self.palette["text"], relief="flat")
         style.map("Treeview", background=[("selected", self.palette["accent"])], foreground=[("selected", "#FFFFFF")])
 
     def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
@@ -321,8 +321,8 @@ class LedgerDesktopApp:
 
     def _setup_tree_style(self, tree: ttk.Treeview) -> None:
         try:
-            tree.tag_configure("odd", background="#FFFFFF")
-            tree.tag_configure("even", background="#F7FAFF")
+            tree.tag_configure("odd", background=self.palette["surface"])
+            tree.tag_configure("even", background=self.palette["surface"])
         except Exception:
             pass
 
@@ -1355,8 +1355,12 @@ class LedgerDesktopApp:
         update_arrange_guide()
 
     def _build_property_ui(self):
-        top = ttk.LabelFrame(self.property_tab, text="물건")
-        top.pack(fill="x", padx=10, pady=8)
+        top_wrap = ttk.Frame(self.property_tab)
+        top_wrap.pack(fill="x", padx=10, pady=(8, 4))
+        ttk.Label(top_wrap, text="물건", style="TLabelframe.Label").pack(anchor="w", pady=(0, 4))
+        ttk.Separator(top_wrap, orient="horizontal").pack(fill="x", pady=(0, 6))
+        top = ttk.Frame(top_wrap)
+        top.pack(fill="x")
 
         ttk.Button(top, text="+ 물건 등록", style="Secondary.TButton", command=self.open_property_wizard).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="내보내기/동기화", style="Secondary.TButton", command=self.export_sync).pack(side="left", padx=4, pady=6)
@@ -2076,8 +2080,12 @@ class LedgerDesktopApp:
         return result["value"]
 
     def _build_customer_ui(self):
-        top = ttk.LabelFrame(self.customer_tab, text="고객")
-        top.pack(fill="x", padx=10, pady=8)
+        top_wrap = ttk.Frame(self.customer_tab)
+        top_wrap.pack(fill="x", padx=10, pady=(8, 4))
+        ttk.Label(top_wrap, text="고객", style="TLabelframe.Label").pack(anchor="w", pady=(0, 4))
+        ttk.Separator(top_wrap, orient="horizontal").pack(fill="x", pady=(0, 6))
+        top = ttk.Frame(top_wrap)
+        top.pack(fill="x")
 
         ttk.Button(top, text="+ 고객 등록", style="Secondary.TButton", command=self.open_customer_wizard).pack(side="left", padx=4, pady=6)
         ttk.Button(top, text="숨김함", style="Secondary.TButton", command=self.open_hidden_customers_window).pack(side="left", padx=4, pady=6)
@@ -2792,7 +2800,11 @@ class LedgerDesktopApp:
         split.add(right, weight=0)
         right.configure(width=260)
 
-        form = ttk.LabelFrame(left, text="물건 정보")
+        left_head = ttk.Frame(left)
+        left_head.pack(fill="x")
+        ttk.Label(left_head, text="물건 정보", style="TLabelframe.Label").pack(anchor="w")
+        ttk.Separator(left_head, orient="horizontal").pack(fill="x", pady=(2, 6))
+        form = ttk.Frame(left)
         form.pack(fill="both", expand=True)
 
         def add_row(r, c, label, widget):
@@ -2842,7 +2854,11 @@ class LedgerDesktopApp:
         notes_frame.rowconfigure(0, weight=1)
         notes_frame.rowconfigure(1, weight=1)
 
-        side = ttk.LabelFrame(right, text="핵심 액션")
+        right_head = ttk.Frame(right)
+        right_head.pack(fill="x")
+        ttk.Label(right_head, text="핵심 액션", style="TLabelframe.Label").pack(anchor="w")
+        ttk.Separator(right_head, orient="horizontal").pack(fill="x", pady=(2, 6))
+        side = ttk.Frame(right)
         side.pack(fill="y", expand=True, anchor="n")
 
         def save_changes():
@@ -3201,11 +3217,21 @@ class LedgerDesktopApp:
         wrapper.columnconfigure(1, weight=0, minsize=260)
         wrapper.rowconfigure(0, weight=1)
 
-        left = ttk.LabelFrame(wrapper, text="고객 정보")
+        left = ttk.Frame(wrapper)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        right = ttk.LabelFrame(wrapper, text="핵심 액션")
+        right = ttk.Frame(wrapper)
         right.grid(row=0, column=1, sticky="ns")
         right.configure(width=260)
+
+        left_head = ttk.Frame(left)
+        left_head.grid(row=0, column=0, columnspan=6, sticky="ew")
+        ttk.Label(left_head, text="고객 정보", style="TLabelframe.Label").pack(anchor="w")
+        ttk.Separator(left_head, orient="horizontal").pack(fill="x", pady=(2, 6))
+
+        right_head = ttk.Frame(right)
+        right_head.pack(fill="x")
+        ttk.Label(right_head, text="핵심 액션", style="TLabelframe.Label").pack(anchor="w")
+        ttk.Separator(right_head, orient="horizontal").pack(fill="x", pady=(2, 6))
 
         fields = [
             ("고객명", "customer_name"), ("전화", "phone"), ("희망탭", "preferred_tab"),
@@ -3218,7 +3244,8 @@ class LedgerDesktopApp:
             left.columnconfigure(col, weight=1)
 
         for i, (label, key) in enumerate(fields):
-            ttk.Label(left, text=label).grid(row=i // 3, column=(i % 3) * 2, padx=8, pady=6, sticky="e")
+            row_i = (i // 3) + 1
+            ttk.Label(left, text=label).grid(row=row_i, column=(i % 3) * 2, padx=8, pady=6, sticky="e")
             if key == "preferred_tab":
                 wrap = ttk.Frame(left)
                 ttk.Entry(wrap, textvariable=vars_[key], width=20, state="readonly").pack(side="left")
@@ -3228,17 +3255,17 @@ class LedgerDesktopApp:
                 w = ttk.Combobox(left, textvariable=vars_[key], values=CUSTOMER_STATUS_VALUES, width=22, state="readonly")
             else:
                 w = ttk.Entry(left, textvariable=vars_[key], width=26)
-            w.grid(row=i // 3, column=(i % 3) * 2 + 1, padx=8, pady=6, sticky="ew")
+            w.grid(row=row_i, column=(i % 3) * 2 + 1, padx=8, pady=6, sticky="ew")
 
         detail_expanded = {"v": True}
         extra_wrap = ttk.Frame(left)
-        extra_wrap.grid(row=4, column=0, columnspan=6, sticky="nsew")
+        extra_wrap.grid(row=5, column=0, columnspan=6, sticky="nsew")
         extra_wrap.columnconfigure(1, weight=1)
         ttk.Label(extra_wrap, text="기타요청").grid(row=0, column=0, padx=8, pady=6, sticky="ne")
         extra_txt = tk.Text(extra_wrap, height=8, wrap="word")
         extra_txt.insert("1.0", str(vars_.get("extra_needs", tk.StringVar(value="")).get()))
         extra_txt.grid(row=0, column=1, padx=8, pady=6, sticky="nsew")
-        left.rowconfigure(4, weight=1)
+        left.rowconfigure(5, weight=1)
 
         def save_changes():
             vars_["extra_needs"].set(extra_txt.get("1.0", "end").strip())
