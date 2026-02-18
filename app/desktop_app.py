@@ -160,6 +160,7 @@ class LedgerDesktopApp:
         self.current_customer_var = tk.StringVar(value="현재 고객: 미선택")
         self.current_property_var = tk.StringVar(value="현재 매물: 미선택")
         self._last_undo_payload: dict | None = None
+        self._tree_heading_labels: dict[int, dict[str, str]] = {}
 
         init_db()
         self.settings = self._load_settings()
@@ -223,6 +224,8 @@ class LedgerDesktopApp:
             "theme_dark": "#0F766E",
             "theme_soft": "#E6FFFB",
             "theme_border": "#5EEAD4",
+            "theme_tint": "#F0FDFA",
+            "theme_line": "#99F6E4",
             "danger_bg": "#FEE2E2",
             "danger_fg": "#B91C1C",
             "danger_border": "#FCA5A5",
@@ -258,10 +261,11 @@ class LedgerDesktopApp:
 
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
         style.configure("TNotebook.Tab", font=(family, base_size), padding=(8, 3), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
-        style.map("TNotebook.Tab", background=[("selected", self.palette["bg"])], foreground=[("selected", self.palette["text"])])
+        style.map("TNotebook.Tab", background=[("selected", self.palette["bg"]), ("active", self.palette["bg"])], foreground=[("selected", self.palette["text"]), ("active", self.palette["theme_dark"])])
 
         style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["surface"], fieldbackground=self.palette["surface"], foreground=self.palette["text"], bordercolor=self.palette["border"])
-        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["surface"], foreground=self.palette["text"], relief="flat")
+        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["theme_tint"], foreground=self.palette["text"], relief="flat", bordercolor=self.palette["border"])
+        style.map("Treeview.Heading", foreground=[("active", self.palette["theme_dark"])], background=[("active", self.palette["theme_tint"])])
         style.map("Treeview", background=[("selected", self.palette["theme_soft"])], foreground=[("selected", self.palette["text"])])
 
     def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
@@ -334,7 +338,7 @@ class LedgerDesktopApp:
             pass
 
     def _attach_notebook_underline(self, nb: ttk.Notebook) -> None:
-        line = tk.Frame(nb, bg=self.palette["theme"], height=2)
+        line = tk.Frame(nb, bg=self.palette["theme_line"], height=2)
 
         def _refresh(_e=None):
             try:
@@ -678,6 +682,8 @@ class LedgerDesktopApp:
         for c in tcols:
             self.tasks_tree.heading(c, text=tlabels.get(c, c), command=lambda col=c: self._sort_tasks_by(col))
             self.tasks_tree.column(c, width=twidths.get(c, 120))
+        self._tree_heading_labels[id(self.tasks_tree)] = dict(tlabels)
+        self._update_tree_heading_state(self.tasks_tree, sorted_col=self.task_sort_col, asc=(not self.task_sort_desc))
         self.tasks_tree.pack(fill="both", expand=True, padx=6, pady=6)
         t_x = ttk.Scrollbar(task_frame, orient="horizontal", command=self.tasks_tree.xview)
         self.tasks_tree.configure(xscrollcommand=t_x.set)
@@ -783,6 +789,7 @@ class LedgerDesktopApp:
     
         rows = list_tasks(include_done=False, limit=400)
         rows = self._sort_task_rows(rows)
+        self._update_tree_heading_state(self.tasks_tree, sorted_col=self.task_sort_col, asc=(not self.task_sort_desc))
         self.dash_vars.get("tasks_open", tk.StringVar()).set(str(len(rows)))
 
         for i in self.tasks_tree.get_children():
@@ -1452,6 +1459,8 @@ class LedgerDesktopApp:
             for c, w in col_defs:
                 tree.heading(c, text=col_labels.get(c, c), command=lambda col=c, t=tree: self.sort_tree(t, col))
                 tree.column(c, width=w, stretch=True)
+            self._tree_heading_labels[id(tree)] = {c: col_labels.get(c, c) for c in cols}
+            self._update_tree_heading_state(tree)
             tree.pack(fill="both", expand=True)
             self._setup_tree_style(tree)
             xsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
@@ -1466,6 +1475,19 @@ class LedgerDesktopApp:
             ttk.Button(btns, text="상세", command=lambda t=tab_name: self.open_selected_property_detail(t)).pack(side="left", padx=4)
             ttk.Button(btns, text="숨김/보임", command=lambda t=tab_name: self.toggle_selected_property(t)).pack(side="left", padx=4)
             ttk.Button(btns, text="🗑️ 삭제", style="Danger.TButton", command=lambda t=tab_name: self.delete_selected_property(t)).pack(side="left", padx=4)
+
+    def _update_tree_heading_state(self, tree: ttk.Treeview, sorted_col: str | None = None, asc: bool = True) -> None:
+        labels = self._tree_heading_labels.get(id(tree), {})
+        columns = tree.cget("columns")
+        for c in columns:
+            base = labels.get(c, c)
+            suffix = ""
+            if sorted_col == c:
+                suffix = " ▲" if asc else " ▼"
+            try:
+                tree.heading(c, text=f"{base}{suffix}")
+            except Exception:
+                pass
 
     def sort_tree(self, tree: ttk.Treeview, col: str):
         key = (id(tree), col)
@@ -1499,6 +1521,7 @@ class LedgerDesktopApp:
         for idx, item in enumerate(items):
             tree.move(item, "", idx)
         self.sort_state[key] = asc
+        self._update_tree_heading_state(tree, sorted_col=col, asc=asc)
 
     def _calc_price_summary(self, row: dict) -> str:
         return money_utils.property_price_summary(row)
