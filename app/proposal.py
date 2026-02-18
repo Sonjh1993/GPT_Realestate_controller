@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import money_utils
+
 # reportlab는 선택 의존성 (PDF 생성 시에만 필요)
 try:
     from reportlab.lib.pagesizes import A4
@@ -31,9 +33,7 @@ try:
         PageBreak,
         Paragraph,
         SimpleDocTemplate,
-        Spacer,
-        Table,
-        TableStyle,
+        Spacer
     )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.cidfonts import UnicodeCIDFont
@@ -89,8 +89,14 @@ def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any
             title = f"물건ID {p.get('id')}"
 
         detail = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            detail.append(f"가격:{price_summary}")
         if floor or total_floor:
             detail.append(f"층: {floor}/{total_floor}".strip("/"))
+        move_available = str(p.get("move_available_date") or "").strip()
+        if move_available:
+            detail.append(f"입주가능:{move_available}")
         if cond:
             detail.append(f"컨디션:{cond}")
         if ori or view:
@@ -120,10 +126,10 @@ def generate_proposal_pdf(
     *,
     customer: dict[str, Any],
     properties: list[dict[str, Any]],
-    photos_by_property: dict[int, list[str]] | None,
+    photos_by_property: dict[int, list[dict[str, str] | str]] | None,
     output_dir: Path,
     title: str = "매물 제안서",
-    max_photos_per_property: int = 1,
+    max_photos_per_property: int = 4,
 ) -> ProposalOutput:
     """Generate proposal PDF + txt message into output_dir."""
     _ensure_reportlab()
@@ -169,6 +175,15 @@ def generate_proposal_pdf(
         spaceBefore=8,
         spaceAfter=4,
     )
+    style_price = ParagraphStyle(
+        "price",
+        parent=styles["BodyText"],
+        fontName="HYGothic-Medium" if "HYGothic-Medium" in pdfmetrics.getRegisteredFontNames() else "HYSMyeongJo-Medium",
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#1f4e79"),
+        spaceAfter=4,
+    )
     style_body = ParagraphStyle(
         "body",
         parent=styles["BodyText"],
@@ -207,7 +222,7 @@ def generate_proposal_pdf(
     photos_by_property = photos_by_property or {}
 
     # helper: scale image to fit box
-    def build_image(path: str, max_w_mm: float = 70, max_h_mm: float = 55):
+    def build_image(path: str, max_w_mm: float = 44, max_h_mm: float = 36):
         try:
             reader = ImageReader(path)
             w, h = reader.getSize()
@@ -235,6 +250,10 @@ def generate_proposal_pdf(
         elements.append(Paragraph(f"{idx}. {title_line}", style_h2))
 
         info_lines = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            elements.append(Paragraph(f"가격: {price_summary}", style_price))
+
         area = p.get("area")
         pyeong = p.get("pyeong")
         if area:
@@ -244,6 +263,8 @@ def generate_proposal_pdf(
         if p.get("orientation") or p.get("view"):
             ov = " / ".join([str(x).strip() for x in [p.get("orientation"), p.get("view")] if str(x or "").strip()])
             info_lines.append(f"향/뷰: {ov}")
+        if p.get("move_available_date"):
+            info_lines.append(f"입주가능일: {p.get('move_available_date')}")
         if p.get("condition") or p.get("repair_needed") is not None:
             rn = _yn(p.get("repair_needed"))
             cn = str(p.get("condition") or "").strip()
@@ -255,31 +276,35 @@ def generate_proposal_pdf(
         if p.get("naver_link"):
             info_lines.append(f"링크: {p.get('naver_link')}")
 
-        left = Paragraph("<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines]), style_body)
+        detail_text = "<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines])
+        elements.append(Paragraph(detail_text, style_body))
+        elements.append(Spacer(1, 4))
 
-        # pick photos
-        img_paths = photos_by_property.get(pid, [])[:max_photos_per_property]
-        img_obj = build_image(img_paths[0]) if img_paths else Spacer(1, 1)
+        # 사진 우선순위: 거실 > 안방 > 작은방 > 화장실 > 주방 > 나머지
+        raw_photos = photos_by_property.get(pid, [])
+        normalized: list[dict[str, str]] = []
+        for it in raw_photos:
+            if isinstance(it, dict):
+                fp = str(it.get("file_path") or "").strip()
+                tg = str(it.get("tag") or "").strip()
+            else:
+                fp = str(it or "").strip()
+                tg = ""
+            if fp:
+                normalized.append({"file_path": fp, "tag": tg})
 
-        tbl = Table(
-            [[left, img_obj]],
-            colWidths=[115 * mm, 65 * mm],
-        )
-        tbl.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOX", (0, 0), (-1, -1), 0.4, colors.lightgrey),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.2, colors.lightgrey),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ]
-            )
-        )
-        elements.append(tbl)
-        elements.append(Spacer(1, 10))
+        priority = {"거실": 0, "안방": 1, "작은방": 2, "화장실": 3, "주방": 4}
+        normalized.sort(key=lambda x: (priority.get(x.get("tag", ""), 99), x.get("tag", "")))
+        chosen = normalized[:max_photos_per_property]
+
+        if chosen:
+            for it in chosen[:3]:
+                elements.append(build_image(str(it.get("file_path") or ""), max_w_mm=55, max_h_mm=44))
+                elements.append(Paragraph(str(it.get("tag") or "사진"), style_small))
+            elements.append(Spacer(1, 8))
+        else:
+            elements.append(Paragraph("사진 없음", style_small))
+            elements.append(Spacer(1, 6))
 
         # page break every ~3 items for readability
         if idx % 3 == 0 and idx != len(properties):
