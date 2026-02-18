@@ -1774,7 +1774,9 @@ class LedgerDesktopApp:
             "customer_name": tk.StringVar(value=""),
             "phone": tk.StringVar(),
             "preferred_tab": tk.StringVar(value=""),
-            "deal_type": tk.StringVar(value="매매"),
+            "deal_sale": tk.BooleanVar(value=True),
+            "deal_jeonse": tk.BooleanVar(value=False),
+            "deal_wolse": tk.BooleanVar(value=False),
             "size_unit": tk.StringVar(value="㎡"),
             "size_value": tk.StringVar(),
             "budget_eok": tk.StringVar(value="0"),
@@ -1823,7 +1825,11 @@ class LedgerDesktopApp:
         ttk.Button(pref_tab_wrap, text="선택", command=lambda: (lambda v: vars_["preferred_tab"].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_["preferred_tab"].get()))).pack(side="left", padx=4)
 
         ttk.Label(s2, text="거래유형").grid(row=1, column=0, padx=6, pady=8, sticky="e")
-        ttk.Combobox(s2, textvariable=vars_["deal_type"], values=["매매", "전세", "월세"], state="readonly", width=29).grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        deal_wrap = ttk.Frame(s2)
+        deal_wrap.grid(row=1, column=1, padx=6, pady=8, sticky="w")
+        ttk.Checkbutton(deal_wrap, text="매매", variable=vars_["deal_sale"]).pack(side="left")
+        ttk.Checkbutton(deal_wrap, text="전세", variable=vars_["deal_jeonse"]).pack(side="left", padx=6)
+        ttk.Checkbutton(deal_wrap, text="월세", variable=vars_["deal_wolse"]).pack(side="left")
         ttk.Label(s2, text="희망 크기").grid(row=2, column=0, padx=6, pady=8, sticky="e")
         size_wrap = ttk.Frame(s2)
         size_wrap.grid(row=2, column=1, padx=6, pady=8, sticky="w")
@@ -1899,8 +1905,8 @@ class LedgerDesktopApp:
                     return False
                 return True
             if idx == 1:
-                if not vars_["deal_type"].get().strip():
-                    messagebox.showwarning("입력 확인", "거래유형을 선택해주세요.")
+                if not (vars_["deal_sale"].get() or vars_["deal_jeonse"].get() or vars_["deal_wolse"].get()):
+                    messagebox.showwarning("입력 확인", "거래유형을 최소 1개 선택해주세요.")
                     return False
                 nums = [
                     vars_["budget_eok"].get(), vars_["budget_che"].get(),
@@ -1948,16 +1954,27 @@ class LedgerDesktopApp:
             payload = {k: v.get().strip() for k, v in vars_.items()}
             payload["customer_name"] = ""
             payload["move_in_period"] = f"{move_y.get():04d}-{move_m.get():02d}-{move_d.get():02d}" if move_mode.get() == "날짜선택" else move_mode.get().strip()
-            deal = payload.get("deal_type", "")
+            selected_deals: list[str] = []
+            if vars_["deal_sale"].get():
+                selected_deals.append("매매")
+            if vars_["deal_jeonse"].get():
+                selected_deals.append("전세")
+            if vars_["deal_wolse"].get():
+                selected_deals.append("월세")
+            payload["deal_type"] = ",".join(selected_deals)
+
             budget_10m = int(payload.get("budget_eok", "0") or 0) * 10 + int(payload.get("budget_che", "0") or 0)
             wolse_deposit_10m = int(payload.get("wolse_deposit_eok", "0") or 0) * 10 + int(payload.get("wolse_deposit_che", "0") or 0)
             wolse_rent_man = int(payload.get("wolse_rent_man", "0") or 0)
-            if deal == "월세":
-                payload["budget"] = f"월세 {payload.get('wolse_deposit_eok','0')}억 {payload.get('wolse_deposit_che','0')}천만원 / {wolse_rent_man}만원"
-            elif deal == "전세":
-                payload["budget"] = f"전세 {payload.get('budget_eok','0')}억 {payload.get('budget_che','0')}천만원"
-            else:
-                payload["budget"] = f"매매 {payload.get('budget_eok','0')}억 {payload.get('budget_che','0')}천만원"
+
+            budget_parts: list[str] = []
+            if "매매" in selected_deals:
+                budget_parts.append(f"매매 {payload.get('budget_eok','0')}억 {payload.get('budget_che','0')}천만원")
+            if "전세" in selected_deals:
+                budget_parts.append(f"전세 {payload.get('budget_eok','0')}억 {payload.get('budget_che','0')}천만원")
+            if "월세" in selected_deals:
+                budget_parts.append(f"월세 {payload.get('wolse_deposit_eok','0')}억 {payload.get('wolse_deposit_che','0')}천만원 / {wolse_rent_man}만원")
+            payload["budget"] = " / ".join(budget_parts) if budget_parts else ""
             if payload["size_unit"] == "㎡":
                 payload["preferred_area"] = payload["size_value"]
                 payload["preferred_pyeong"] = ""
@@ -2011,7 +2028,9 @@ class LedgerDesktopApp:
         for row in rows:
             if row.get("hidden"):
                 continue
-            if deal_filter != "전체" and str(row.get("deal_type") or "") != deal_filter:
+            deal_text = str(row.get("deal_type") or "")
+            deal_tokens = {t.strip() for t in deal_text.split(",") if t.strip()}
+            if deal_filter != "전체" and deal_filter not in deal_tokens:
                 continue
 
             size = ""
