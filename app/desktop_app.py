@@ -149,7 +149,7 @@ class LedgerDesktopApp:
             self.root.state("zoomed")
         except Exception:
             pass
-        self._apply_ui_scale(1.5)
+        self._apply_ui_scale(1.25)
 
         self.sort_state: dict[tuple[int, str], bool] = {}
         self.task_sort_col = "due_at"
@@ -196,34 +196,71 @@ class LedgerDesktopApp:
         self._refresh_preset_buttons()
         self.start_auto_sync_loop()
 
-    def _apply_ui_scale(self, scale: float = 1.5) -> None:
+    def _apply_ui_scale(self, scale: float = 1.25) -> None:
         try:
             self.root.tk.call("tk", "scaling", scale)
         except Exception:
             pass
 
-        # 기본 Tk 폰트들을 2배 확장
+        family = "Malgun Gothic" if platform.system().lower().startswith("win") else "TkDefaultFont"
+        base_size = 11
+        heading_size = base_size + 2
+
         for name in ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkHeadingFont", "TkCaptionFont", "TkSmallCaptionFont", "TkIconFont", "TkTooltipFont"):
             try:
                 f = tkfont.nametofont(name)
-                size = abs(int(f.cget("size") or 10))
-                f.configure(size=max(10, int(size * scale)))
+                f.configure(family=family, size=base_size)
             except Exception:
                 continue
+        try:
+            tkfont.nametofont("TkHeadingFont").configure(family=family, size=heading_size, weight="bold")
+        except Exception:
+            pass
 
-        # ttk 위젯 스타일 확대
+        self.palette = {
+            "bg": "#F7F9FC",
+            "panel": "#FFFFFF",
+            "text": "#1F2937",
+            "muted": "#6B7280",
+            "border": "#D7DFEA",
+            "accent": "#2F6FEB",
+            "danger": "#C24141",
+        }
+
         style = ttk.Style(self.root)
-        base_size = 15
-        style.configure("TLabel", font=("맑은 고딕", base_size))
-        style.configure("TButton", font=("맑은 고딕", base_size), padding=(9, 7))
-        style.configure("TEntry", font=("맑은 고딕", base_size), padding=(6, 6))
-        style.configure("TCombobox", font=("맑은 고딕", base_size), padding=(6, 6))
-        style.configure("TCheckbutton", font=("맑은 고딕", base_size))
-        style.configure("TRadiobutton", font=("맑은 고딕", base_size))
-        style.configure("TNotebook.Tab", font=("맑은 고딕", base_size), padding=(14, 9))
-        style.configure("Treeview", font=("맑은 고딕", base_size), rowheight=33)
-        style.configure("Treeview.Heading", font=("맑은 고딕", base_size, "bold"))
-        style.configure("TLabelframe.Label", font=("맑은 고딕", base_size, "bold"))
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        style.configure(".", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
+        style.configure("TFrame", background=self.palette["bg"])
+        style.configure("TLabelframe", background=self.palette["panel"], bordercolor=self.palette["border"], relief="solid")
+        style.configure("TLabelframe.Label", background=self.palette["panel"], foreground=self.palette["text"], font=(family, heading_size, "bold"))
+        style.configure("TLabel", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
+        style.configure("Muted.TLabel", background=self.palette["bg"], foreground=self.palette["muted"], font=(family, base_size))
+
+        style.configure("TButton", font=(family, base_size), padding=(10, 6), borderwidth=1)
+        style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["panel"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.map("Secondary.TButton", background=[("active", "#F0F4FA")])
+        style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["accent"], foreground="#FFFFFF", bordercolor=self.palette["accent"])
+        style.map("Primary.TButton", background=[("active", "#285FD0")])
+        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background="#FBECEC", foreground=self.palette["danger"], bordercolor="#F0BDBD")
+        style.map("Danger.TButton", background=[("active", "#F6DDDD")])
+
+        style.configure("TEntry", fieldbackground=self.palette["panel"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
+        style.configure("TCombobox", fieldbackground=self.palette["panel"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
+        style.map("TCombobox", bordercolor=[("focus", self.palette["accent"])])
+        style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
+        style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
+
+        style.configure("TNotebook", background=self.palette["bg"], borderwidth=0)
+        style.configure("TNotebook.Tab", font=(family, base_size), padding=(12, 7), background="#ECF1F8", foreground=self.palette["muted"])
+        style.map("TNotebook.Tab", background=[("selected", self.palette["panel"])], foreground=[("selected", self.palette["text"])])
+
+        style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["panel"], fieldbackground=self.palette["panel"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background="#EEF3FA", foreground=self.palette["text"], relief="flat")
+        style.map("Treeview", background=[("selected", self.palette["accent"])], foreground=[("selected", "#FFFFFF")])
 
     def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
         try:
@@ -286,6 +323,13 @@ class LedgerDesktopApp:
         if tab == "고객":
             return self._current_customer_tree()
         return None
+
+    def _setup_tree_style(self, tree: ttk.Treeview) -> None:
+        try:
+            tree.tag_configure("odd", background="#FFFFFF")
+            tree.tag_configure("even", background="#F7FAFF")
+        except Exception:
+            pass
 
     def _remember_undo(self, payload: dict | None) -> None:
         self._last_undo_payload = payload
@@ -1178,11 +1222,11 @@ class LedgerDesktopApp:
         top = ttk.LabelFrame(self.property_tab, text="물건")
         top.pack(fill="x", padx=10, pady=8)
 
-        ttk.Button(top, text="+ 물건 등록", command=self.open_property_wizard).pack(side="left", padx=4, pady=6)
-        ttk.Button(top, text="내보내기/동기화", command=self.export_sync).pack(side="left", padx=4, pady=6)
-        ttk.Button(top, text="숨김함", command=self.open_hidden_properties_window).pack(side="left", padx=4, pady=6)
-        ttk.Button(top, text="제안서 PDF(선택1)", command=lambda: self._generate_proposal_from_property_tab()).pack(side="left", padx=4, pady=6)
-        self.undo_btn = ttk.Button(top, text="Undo", command=self._undo_last_action, state="disabled")
+        ttk.Button(top, text="+ 물건 등록", style="Secondary.TButton", command=self.open_property_wizard).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="내보내기/동기화", style="Secondary.TButton", command=self.export_sync).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="숨김함", style="Secondary.TButton", command=self.open_hidden_properties_window).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="PDF+사진 패킹", style="Primary.TButton", command=lambda: self._generate_proposal_from_property_tab()).pack(side="left", padx=4, pady=6)
+        self.undo_btn = ttk.Button(top, text="Undo", style="Secondary.TButton", command=self._undo_last_action, state="disabled")
         self.undo_btn.pack(side="left", padx=4, pady=6)
 
         preset_wrap = ttk.Frame(top)
@@ -1207,7 +1251,7 @@ class LedgerDesktopApp:
         ent.pack(side="left", padx=4)
         ent.bind("<KeyRelease>", lambda _e: self.refresh_properties())
         ent.bind("<Return>", lambda _e: self.refresh_properties())
-        ttk.Button(top, text="검색", command=self.refresh_properties).pack(side="left", padx=4)
+        ttk.Button(top, text="🔍 검색", style="Secondary.TButton", command=self.refresh_properties).pack(side="left", padx=4)
 
         self.inner_tabs = ttk.Notebook(self.property_tab)
         self.inner_tabs.pack(fill="both", expand=True, padx=10, pady=8)
@@ -1245,6 +1289,7 @@ class LedgerDesktopApp:
                 tree.heading(c, text=col_labels.get(c, c), command=lambda col=c, t=tree: self.sort_tree(t, col))
                 tree.column(c, width=w, stretch=True)
             tree.pack(fill="both", expand=True)
+            self._setup_tree_style(tree)
             xsb = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
             tree.configure(xscrollcommand=xsb.set)
             xsb.pack(fill="x")
@@ -1256,7 +1301,7 @@ class LedgerDesktopApp:
             btns.pack(fill="x", pady=4)
             ttk.Button(btns, text="상세", command=lambda t=tab_name: self.open_selected_property_detail(t)).pack(side="left", padx=4)
             ttk.Button(btns, text="숨김/보임", command=lambda t=tab_name: self.toggle_selected_property(t)).pack(side="left", padx=4)
-            ttk.Button(btns, text="삭제", command=lambda t=tab_name: self.delete_selected_property(t)).pack(side="left", padx=4)
+            ttk.Button(btns, text="🗑️ 삭제", style="Danger.TButton", command=lambda t=tab_name: self.delete_selected_property(t)).pack(side="left", padx=4)
 
     def sort_tree(self, tree: ttk.Treeview, col: str):
         key = (id(tree), col)
@@ -1365,11 +1410,12 @@ class LedgerDesktopApp:
                 rows = [r for r in rows if _score(r)[0] < 9]
                 rows.sort(key=lambda r: _score(r)[0])
 
-            for row in rows:
+            for idx, row in enumerate(rows):
                 tree.insert(
                     "",
                     "end",
                     iid=str(row.get("id")),
+                    tags=(("even" if idx % 2 == 0 else "odd"),),
                     values=(
                         row.get("status"),
                         row.get("complex_name"),
@@ -1952,9 +1998,9 @@ class LedgerDesktopApp:
         top = ttk.LabelFrame(self.customer_tab, text="고객")
         top.pack(fill="x", padx=10, pady=8)
 
-        ttk.Button(top, text="+ 고객 등록", command=self.open_customer_wizard).pack(side="left", padx=4, pady=6)
-        ttk.Button(top, text="숨김함", command=self.open_hidden_customers_window).pack(side="left", padx=4, pady=6)
-        ttk.Button(top, text="내보내기/동기화", command=self.export_sync).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="+ 고객 등록", style="Secondary.TButton", command=self.open_customer_wizard).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="숨김함", style="Secondary.TButton", command=self.open_hidden_customers_window).pack(side="left", padx=4, pady=6)
+        ttk.Button(top, text="내보내기/동기화", style="Secondary.TButton", command=self.export_sync).pack(side="left", padx=4, pady=6)
 
         ttk.Label(top, text="거래유형").pack(side="left", padx=(18, 4))
         self.customer_deal_filter_var = tk.StringVar(value="전체")
@@ -1969,7 +2015,7 @@ class LedgerDesktopApp:
         ent.pack(side="left", padx=4)
         ent.bind("<KeyRelease>", lambda _e: self.refresh_customers())
         ent.bind("<Return>", lambda _e: self.refresh_customers())
-        ttk.Button(top, text="검색", command=self.refresh_customers).pack(side="left", padx=4)
+        ttk.Button(top, text="🔍 검색", style="Secondary.TButton", command=self.refresh_customers).pack(side="left", padx=4)
 
         cols = ("customer_name", "phone", "preferred_tab", "deal_type", "budget", "size", "move_in", "floor_preference", "status", "updated_at")
         col_defs = [
@@ -2009,6 +2055,7 @@ class LedgerDesktopApp:
                 tree.heading(c, text=col_labels.get(c, c))
                 tree.column(c, width=w, stretch=True)
             tree.pack(fill="both", expand=True)
+            self._setup_tree_style(tree)
             c_x = ttk.Scrollbar(frame, orient="horizontal", command=tree.xview)
             tree.configure(xscrollcommand=c_x.set)
             c_x.pack(fill="x", pady=(0, 6))
@@ -2020,7 +2067,7 @@ class LedgerDesktopApp:
         btns.pack(fill="x", padx=10, pady=4)
         ttk.Button(btns, text="상세", command=self.open_selected_customer_detail).pack(side="left", padx=4)
         ttk.Button(btns, text="숨김/보임", command=self.toggle_selected_customer).pack(side="left", padx=4)
-        ttk.Button(btns, text="삭제", command=self.delete_selected_customer).pack(side="left", padx=4)
+        ttk.Button(btns, text="🗑️ 삭제", style="Danger.TButton", command=self.delete_selected_customer).pack(side="left", padx=4)
 
     def _current_customer_tree(self) -> ttk.Treeview:
         current_tab = self.customer_nb.tab(self.customer_nb.select(), "text") if hasattr(self, "customer_nb") else "전체"
@@ -2311,7 +2358,8 @@ class LedgerDesktopApp:
             )
 
             if "전체" in self.customer_trees:
-                self.customer_trees["전체"].insert("", "end", iid=str(row.get("id")), values=values)
+                idx_all = len(self.customer_trees["전체"].get_children())
+                self.customer_trees["전체"].insert("", "end", iid=str(row.get("id")), tags=(("even" if idx_all % 2 == 0 else "odd"),), values=values)
 
             pref_tabs = {self._normalize_property_tab(t) for t in self._parse_preferred_tabs(str(row.get("preferred_tab") or ""))}
             for tab_name in PROPERTY_TABS:
@@ -2319,7 +2367,8 @@ class LedgerDesktopApp:
                 if norm_tab in pref_tabs and tab_name in self.customer_trees:
                     tab_values = list(values)
                     tab_values[2] = tab_name
-                    self.customer_trees[tab_name].insert("", "end", iid=str(row.get("id")), values=tuple(tab_values))
+                    idx_tab = len(self.customer_trees[tab_name].get_children())
+                    self.customer_trees[tab_name].insert("", "end", iid=str(row.get("id")), tags=(("even" if idx_tab % 2 == 0 else "odd"),), values=tuple(tab_values))
 
 
     def toggle_selected_customer(self):
@@ -2645,68 +2694,73 @@ class LedgerDesktopApp:
         }
 
         tab_basic.columnconfigure(0, weight=1)
-        form = ttk.LabelFrame(tab_basic, text="물건 정보")
-        form.pack(fill="both", expand=True, padx=10, pady=10)
+        tab_basic.rowconfigure(0, weight=1)
+
+        split = ttk.Panedwindow(tab_basic, orient="horizontal")
+        split.pack(fill="both", expand=True, padx=10, pady=10)
+
+        left = ttk.Frame(split, style="TFrame")
+        right = ttk.Frame(split, style="TFrame")
+        split.add(left, weight=5)
+        split.add(right, weight=2)
+
+        form = ttk.LabelFrame(left, text="물건 정보")
+        form.pack(fill="both", expand=True)
 
         def add_row(r, c, label, widget):
-            ttk.Label(form, text=label).grid(row=r, column=c, padx=6, pady=4, sticky="e")
-            widget.grid(row=r, column=c + 1, padx=6, pady=4, sticky="ew")
+            ttk.Label(form, text=label).grid(row=r, column=c, padx=8, pady=6, sticky="e")
+            widget.grid(row=r, column=c + 1, padx=8, pady=6, sticky="ew")
 
         # row 0
         add_row(0, 0, "탭", ttk.Entry(form, textvariable=vars_["tab"], width=24, state="readonly"))
         add_row(0, 2, "단지명", ttk.Entry(form, textvariable=vars_["complex_name"], width=36))
         add_row(0, 4, "상태", ttk.Combobox(form, textvariable=vars_["status"], width=18, state="readonly", values=PROPERTY_STATUS_VALUES))
 
-        for c in (1, 3, 5, 7):
+        for c in (1, 3, 5):
             form.columnconfigure(c, weight=1)
 
-        # row 1
         add_row(1, 0, "연락처", ttk.Entry(form, textvariable=vars_["contact_display"], width=24, state="readonly"))
         add_row(1, 2, "동/호(상세)", ttk.Entry(form, textvariable=vars_["address_detail"], width=24))
         add_row(1, 4, "면적타입", ttk.Entry(form, textvariable=vars_["unit_type"], width=18))
 
-        # row 2
-        add_row(2, 0, "층/총층", ttk.Entry(form, textvariable=vars_["floor"], width=7))
-        ttk.Label(form, text="/").grid(row=2, column=2, sticky="w")
-        ttk.Entry(form, textvariable=vars_["total_floor"], width=7).grid(row=2, column=3, padx=2, pady=4, sticky="w")
-        add_row(2, 4, "컨디션", ttk.Combobox(form, textvariable=vars_["condition"], width=18, state="readonly", values=["상", "중", "하"]))
+        add_row(2, 0, "층/총층", ttk.Entry(form, textvariable=vars_["floor"], width=10))
+        add_row(2, 2, "면적(㎡)", ttk.Entry(form, textvariable=vars_["area"], width=18))
+        add_row(2, 4, "평형", ttk.Entry(form, textvariable=vars_["pyeong"], width=18))
 
-        # row 3
-        add_row(3, 0, "면적(㎡)", ttk.Entry(form, textvariable=vars_["area"], width=24))
-        add_row(3, 2, "평형", ttk.Entry(form, textvariable=vars_["pyeong"], width=18))
-        ttk.Checkbutton(form, text="수리필요", variable=vars_["repair_needed"]).grid(row=3, column=4, padx=6, pady=4, sticky="w")
+        add_row(3, 0, "컨디션", ttk.Combobox(form, textvariable=vars_["condition"], width=18, state="readonly", values=["상", "중", "하"]))
+        add_row(3, 2, "조망/뷰", ttk.Entry(form, textvariable=vars_["view"], width=24))
+        add_row(3, 4, "향", ttk.Entry(form, textvariable=vars_["orientation"], width=18))
+        ttk.Checkbutton(form, text="수리필요", variable=vars_["repair_needed"]).grid(row=4, column=0, padx=8, pady=6, sticky="w")
 
-        # row 4
-        add_row(4, 0, "조망/뷰", ttk.Entry(form, textvariable=vars_["view"], width=24))
-        add_row(4, 2, "향", ttk.Entry(form, textvariable=vars_["orientation"], width=18))
+        add_row(5, 0, "세입자정보", ttk.Entry(form, textvariable=vars_["tenant_info"], width=64))
+        add_row(6, 0, "네이버링크", ttk.Entry(form, textvariable=vars_["naver_link"], width=64))
 
-        # row 5+
-        add_row(5, 0, "세입자정보", ttk.Entry(form, textvariable=vars_["tenant_info"], width=60))
-        add_row(6, 0, "네이버링크", ttk.Entry(form, textvariable=vars_["naver_link"], width=60))
-        add_row(7, 0, "특이사항", ttk.Entry(form, textvariable=vars_["special_notes"], width=60))
-        add_row(8, 0, "별도기재", ttk.Entry(form, textvariable=vars_["note"], width=60))
+        ttk.Label(form, text="특이사항").grid(row=7, column=0, padx=8, pady=6, sticky="ne")
+        special_txt = tk.Text(form, height=5, wrap="word")
+        special_txt.insert("1.0", str(vars_["special_notes"].get() or ""))
+        special_txt.grid(row=7, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
 
-        actions = ttk.Frame(tab_basic)
-        actions.pack(fill="x", padx=10, pady=10)
+        ttk.Label(form, text="별도기재").grid(row=8, column=0, padx=8, pady=6, sticky="ne")
+        note_txt = tk.Text(form, height=5, wrap="word")
+        note_txt.insert("1.0", str(vars_["note"].get() or ""))
+        note_txt.grid(row=8, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
+        form.rowconfigure(7, weight=1)
+        form.rowconfigure(8, weight=1)
+
+        side = ttk.LabelFrame(right, text="핵심 액션")
+        side.pack(fill="y", expand=False, anchor="n")
 
         def save_changes():
+            vars_["special_notes"].set(special_txt.get("1.0", "end").strip())
+            vars_["note"].set(note_txt.get("1.0", "end").strip())
             data = {k: (v.get() if not isinstance(v, tk.BooleanVar) else bool(v.get())) for k, v in vars_.items()}
-            # area/pyeong numeric as strings ok; storage converts
             before = get_property(property_id, include_deleted=True)
             update_property(property_id, data)
             if before and str(before.get("status") or "") != str(data.get("status") or ""):
                 self._remember_undo({"action": "PROPERTY_STATUS", "id": property_id, "before_status": before.get("status")})
             self.request_sync(reason="PROPERTY_UPDATE")
             self.refresh_all()
-
-            linked_tasks = list_tasks(include_done=False, entity_type="PROPERTY", entity_id=property_id)
-            linked_customers = sorted({int(v.get("customer_id")) for v in list_viewings(property_id=property_id) if v.get("customer_id")})
-            msg = f"저장 완료. 연결된 할일 {len(linked_tasks)}개 / 연결된 고객 {len(linked_customers)}명"
-            if linked_tasks or linked_customers:
-                if messagebox.askyesno("완료", msg + "\n바로 열까요?"):
-                    self._open_related_navigation_popup(title="연결된 고객", customers=linked_customers)
-            else:
-                messagebox.showinfo("완료", "저장되었습니다.")
+            messagebox.showinfo("완료", "저장되었습니다.")
 
         def toggle_hide():
             before = get_property(property_id, include_deleted=True)
@@ -2730,11 +2784,13 @@ class LedgerDesktopApp:
                 return
             webbrowser.open(url)
 
-        ttk.Button(actions, text="저장", command=save_changes).pack(side="left", padx=4)
-        ttk.Button(actions, text="네이버 링크 열기", command=open_link).pack(side="left", padx=4)
-        ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
-        ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
-        ttk.Button(actions, text="할 일 추가", command=lambda: self.open_add_task_window(default_entity_type="PROPERTY", default_entity_id=property_id)).pack(side="left", padx=4)
+        ttk.Button(side, text="💾 저장", style="Primary.TButton", command=save_changes).pack(fill="x", padx=8, pady=(8, 4))
+        ttk.Button(side, text="📷 사진 탭 열기", style="Secondary.TButton", command=lambda: nb.select(tab_photos)).pack(fill="x", padx=8, pady=4)
+        ttk.Button(side, text="PDF+사진 패킹", style="Secondary.TButton", command=lambda: self.generate_proposal_for_property(property_id)).pack(fill="x", padx=8, pady=4)
+        ttk.Button(side, text="링크 열기", style="Secondary.TButton", command=open_link).pack(fill="x", padx=8, pady=4)
+        ttk.Button(side, text="숨김/보임", style="Secondary.TButton", command=toggle_hide).pack(fill="x", padx=8, pady=4)
+        ttk.Button(side, text="🗑️ 삭제", style="Danger.TButton", command=soft_delete).pack(fill="x", padx=8, pady=(4, 8))
+        ttk.Button(side, text="할 일 추가", style="Secondary.TButton", command=lambda: self.open_add_task_window(default_entity_type="PROPERTY", default_entity_id=property_id)).pack(fill="x", padx=8, pady=(4, 8))
 
         # ---- photos tab
         ph_box = ttk.LabelFrame(tab_photos, text="사진")
@@ -2808,10 +2864,10 @@ class LedgerDesktopApp:
                 delete_photo(pid_)
                 refresh_photos()
 
-        ttk.Button(ph_controls, text="추가", command=add_photo_ui).pack(side="left", padx=4)
-        ttk.Button(ph_controls, text="사진 보기", command=open_photo).pack(side="left", padx=4)
+        ttk.Button(ph_controls, text="📷 사진등록", style="Primary.TButton", command=add_photo_ui).pack(side="left", padx=4)
+        ttk.Button(ph_controls, text="사진 보기", style="Secondary.TButton", command=open_photo).pack(side="left", padx=4)
         ttk.Button(ph_controls, text="폴더 열기", command=lambda: _open_folder(Path(ph_tree.item(ph_tree.selection()[0], "values")[2]).parent) if ph_tree.selection() else None).pack(side="left", padx=4)
-        ttk.Button(ph_controls, text="기록 삭제", command=remove_photo).pack(side="left", padx=4)
+        ttk.Button(ph_controls, text="🗑️ 기록 삭제", style="Danger.TButton", command=remove_photo).pack(side="left", padx=4)
         ttk.Button(ph_controls, text="내보내기/동기화", command=self.export_sync).pack(side="right", padx=4)
 
         refresh_photos()
@@ -3025,62 +3081,56 @@ class LedgerDesktopApp:
         self._fit_toplevel(win, 980, 700)
 
         vars_ = {k: tk.StringVar(value=str(row.get(k, "") or "")) for k in row.keys()}
-        # boolean hidden not edited here
 
-        win.columnconfigure(0, weight=1)
-        form = ttk.LabelFrame(win, text="고객 정보")
-        form.pack(fill="both", expand=True, padx=10, pady=10)
+        wrapper = ttk.Frame(win)
+        wrapper.pack(fill="both", expand=True, padx=10, pady=10)
+        wrapper.columnconfigure(0, weight=5)
+        wrapper.columnconfigure(1, weight=2)
+        wrapper.rowconfigure(0, weight=1)
+
+        left = ttk.LabelFrame(wrapper, text="고객 정보")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        right = ttk.LabelFrame(wrapper, text="핵심 액션")
+        right.grid(row=0, column=1, sticky="ns")
 
         fields = [
-            ("고객명", "customer_name"),
-            ("전화", "phone"),
-            ("희망탭", "preferred_tab"),
-            ("희망면적", "preferred_area"),
-            ("희망평형", "preferred_pyeong"),
-            ("예산", "budget"),
-            ("기간", "move_in_period"),
-            ("뷰", "view_preference"),
-            ("위치", "location_preference"),
-            ("층수선호", "floor_preference"),
-            ("기타요청", "extra_needs"),
-            ("상태", "status"),
+            ("고객명", "customer_name"), ("전화", "phone"), ("희망탭", "preferred_tab"),
+            ("희망면적", "preferred_area"), ("희망평형", "preferred_pyeong"), ("예산", "budget"),
+            ("기간", "move_in_period"), ("뷰", "view_preference"), ("위치", "location_preference"),
+            ("층수선호", "floor_preference"), ("상태", "status"),
         ]
 
         for col in (1, 3, 5):
-            form.columnconfigure(col, weight=1)
+            left.columnconfigure(col, weight=1)
 
         for i, (label, key) in enumerate(fields):
-            ttk.Label(form, text=label).grid(row=i // 3, column=(i % 3) * 2, padx=6, pady=6, sticky="e")
+            ttk.Label(left, text=label).grid(row=i // 3, column=(i % 3) * 2, padx=8, pady=6, sticky="e")
             if key == "preferred_tab":
-                wrap = ttk.Frame(form)
+                wrap = ttk.Frame(left)
                 ttk.Entry(wrap, textvariable=vars_[key], width=20, state="readonly").pack(side="left")
-                ttk.Button(wrap, text="선택", command=lambda k=key: (lambda v: vars_[k].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_[k].get()))).pack(side="left", padx=2)
+                ttk.Button(wrap, text="선택", style="Secondary.TButton", command=lambda k=key: (lambda v: vars_[k].set(v) if v is not None else None)(self._open_tab_multi_select(win, vars_[k].get()))).pack(side="left", padx=2)
                 w = wrap
             elif key == "status":
-                w = ttk.Combobox(form, textvariable=vars_[key], values=CUSTOMER_STATUS_VALUES, width=22, state="readonly")
+                w = ttk.Combobox(left, textvariable=vars_[key], values=CUSTOMER_STATUS_VALUES, width=22, state="readonly")
             else:
-                w = ttk.Entry(form, textvariable=vars_[key], width=26)
-            w.grid(row=i // 3, column=(i % 3) * 2 + 1, padx=6, pady=6, sticky="ew")
+                w = ttk.Entry(left, textvariable=vars_[key], width=26)
+            w.grid(row=i // 3, column=(i % 3) * 2 + 1, padx=8, pady=6, sticky="ew")
 
-        actions = ttk.Frame(win)
-        actions.pack(fill="x", padx=10, pady=10)
+        ttk.Label(left, text="기타요청").grid(row=4, column=0, padx=8, pady=6, sticky="ne")
+        extra_txt = tk.Text(left, height=8, wrap="word")
+        extra_txt.insert("1.0", str(vars_.get("extra_needs", tk.StringVar(value="")).get()))
+        extra_txt.grid(row=4, column=1, columnspan=5, padx=8, pady=6, sticky="nsew")
+        left.rowconfigure(4, weight=1)
 
         def save_changes():
+            vars_["extra_needs"].set(extra_txt.get("1.0", "end").strip())
             data = {k: v.get() for k, v in vars_.items()}
             before = get_customer(customer_id, include_deleted=True)
             update_customer(customer_id, data)
             if before and str(before.get("status") or "") != str(data.get("status") or ""):
                 self._remember_undo({"action": "CUSTOMER_STATUS", "id": customer_id, "before_status": before.get("status")})
             self.refresh_all()
-
-            linked_tasks = list_tasks(include_done=False, entity_type="CUSTOMER", entity_id=customer_id)
-            linked_props = sorted({int(v.get("property_id")) for v in list_viewings(customer_id=customer_id) if v.get("property_id")})
-            msg = f"저장 완료. 연결된 할일 {len(linked_tasks)}개 / 연결된 물건 {len(linked_props)}개"
-            if linked_tasks or linked_props:
-                if messagebox.askyesno("완료", msg + "\n바로 열까요?"):
-                    self._open_related_navigation_popup(title="연결된 물건", properties=linked_props)
-            else:
-                messagebox.showinfo("완료", "저장되었습니다.")
+            messagebox.showinfo("완료", "저장되었습니다.")
 
         def toggle_hide():
             before = get_customer(customer_id, include_deleted=True)
@@ -3098,9 +3148,10 @@ class LedgerDesktopApp:
                 self.refresh_all()
                 win.destroy()
 
-        ttk.Button(actions, text="저장", command=save_changes).pack(side="left", padx=4)
-        ttk.Button(actions, text="숨김/보임", command=toggle_hide).pack(side="left", padx=4)
-        ttk.Button(actions, text="삭제", command=soft_delete).pack(side="left", padx=4)
+        ttk.Button(right, text="💾 저장", style="Primary.TButton", command=save_changes).pack(fill="x", padx=8, pady=(8, 4))
+        ttk.Button(right, text="할 일 추가", style="Secondary.TButton", command=lambda: self.open_add_task_window(default_entity_type="CUSTOMER", default_entity_id=customer_id)).pack(fill="x", padx=8, pady=4)
+        ttk.Button(right, text="숨김/보임", style="Secondary.TButton", command=toggle_hide).pack(fill="x", padx=8, pady=4)
+        ttk.Button(right, text="🗑️ 삭제", style="Danger.TButton", command=soft_delete).pack(fill="x", padx=8, pady=(4, 8))
 
     def _open_related_navigation_popup(self, *, title: str, customers: list[int] | None = None, properties: list[int] | None = None):
         customers = customers or []
