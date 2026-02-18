@@ -165,10 +165,11 @@ class LedgerDesktopApp:
         init_db()
         self.settings = self._load_settings()
 
-        status_bar = ttk.Frame(root)
+        status_bar = ttk.Frame(root, style="StatusBar.TFrame")
         status_bar.pack(fill="x", padx=10, pady=(8, 2))
-        ttk.Label(status_bar, textvariable=self.current_customer_var, style="Muted.TLabel").pack(side="left", padx=(0, 16))
-        ttk.Label(status_bar, textvariable=self.current_property_var, style="Muted.TLabel").pack(side="left")
+        ttk.Label(status_bar, textvariable=self.current_customer_var, style="StatusBar.TLabel").pack(side="left", padx=(0, 16))
+        ttk.Label(status_bar, textvariable=self.current_property_var, style="StatusBar.TLabel").pack(side="left")
+        ttk.Separator(root, orient="horizontal").pack(fill="x", padx=10, pady=(0, 4))
 
         self.main = ttk.Notebook(root)
         self.main.pack(fill="both", expand=True)
@@ -220,15 +221,11 @@ class LedgerDesktopApp:
             "text": "#0F172A",
             "muted": "#64748B",
             "border": "#D1D5DB",
-            "theme": "#0EA5A4",
-            "theme_dark": "#0F766E",
-            "theme_soft": "#E6FFFB",
-            "theme_border": "#5EEAD4",
-            "theme_tint": "#F0FDFA",
-            "theme_line": "#99F6E4",
-            "danger_bg": "#FEE2E2",
-            "danger_fg": "#B91C1C",
-            "danger_border": "#FCA5A5",
+            "status_bg": "#F3F4F6",
+            "sky": "#3B82F6",
+            "sky_tint": "#EFF6FF",
+            "sky_tint_hover": "#DBEAFE",
+            "sky_line": "#BFDBFE",
         }
 
         style = ttk.Style(self.root)
@@ -243,30 +240,32 @@ class LedgerDesktopApp:
         style.configure("TLabelframe.Label", background=self.palette["bg"], foreground=self.palette["text"], font=(family, heading_size, "bold"))
         style.configure("TLabel", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("Muted.TLabel", background=self.palette["bg"], foreground=self.palette["muted"], font=(family, base_size))
+        style.configure("StatusBar.TFrame", background=self.palette["status_bg"])
+        style.configure("StatusBar.TLabel", background=self.palette["status_bg"], foreground=self.palette["text"], font=(family, base_size, "bold"))
 
         style.configure("TButton", font=(family, base_size), padding=(10, 6), borderwidth=1)
         style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
-        style.map("Secondary.TButton", background=[("active", "#F8FAFC")])
-        style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["theme"], foreground="#FFFFFF", bordercolor=self.palette["theme"])
-        style.map("Primary.TButton", background=[("active", self.palette["theme_dark"])])
-        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["danger_bg"], foreground=self.palette["danger_fg"], bordercolor=self.palette["danger_border"])
-        style.map("Danger.TButton", background=[("active", "#FECACA")])
+        style.map("Secondary.TButton", background=[("active", "#F9FAFB")])
+        style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.map("Primary.TButton", background=[("active", "#F9FAFB")])
+        style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
+        style.map("Danger.TButton", background=[("active", "#F9FAFB")])
 
         style.configure("TEntry", fieldbackground=self.palette["surface"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"])
         style.configure("TCombobox", fieldbackground=self.palette["surface"], background=self.palette["surface"], bordercolor=self.palette["border"], padding=(6, 5), foreground=self.palette["text"], arrowsize=14)
-        style.map("TCombobox", bordercolor=[("focus", self.palette["theme_border"])], fieldbackground=[("readonly", self.palette["surface"]), ("!disabled", self.palette["surface"])], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", self.palette["theme_soft"])], selectforeground=[("readonly", self.palette["text"])])
+        style.map("TCombobox", bordercolor=[("focus", self.palette["sky_line"])], fieldbackground=[("readonly", self.palette["surface"]), ("!disabled", self.palette["surface"])], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", self.palette["sky_tint"])], selectforeground=[("readonly", self.palette["text"])])
         style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TSeparator", background=self.palette["border"])
 
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
-        style.configure("TNotebook.Tab", font=(family, base_size), padding=(8, 3), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
-        style.map("TNotebook.Tab", background=[("selected", self.palette["bg"]), ("active", self.palette["bg"])], foreground=[("selected", self.palette["text"]), ("active", self.palette["theme_dark"])])
+        style.configure("TNotebook.Tab", font=(family, base_size), padding=(8, 2), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
+        style.map("TNotebook.Tab", background=[("selected", self.palette["sky_tint"]), ("active", self.palette["sky_tint"])], foreground=[("selected", self.palette["text"]), ("active", self.palette["muted"])])
 
         style.configure("Treeview", font=(family, 10), rowheight=30, background=self.palette["surface"], fieldbackground=self.palette["surface"], foreground=self.palette["text"], bordercolor=self.palette["border"])
-        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["theme_tint"], foreground=self.palette["text"], relief="flat", bordercolor=self.palette["border"])
-        style.map("Treeview.Heading", foreground=[("active", self.palette["theme_dark"])], background=[("active", self.palette["theme_tint"])])
-        style.map("Treeview", background=[("selected", self.palette["theme_soft"])], foreground=[("selected", self.palette["text"])])
+        style.configure("Treeview.Heading", font=(family, base_size, "bold"), background=self.palette["sky_tint"], foreground=self.palette["text"], relief="flat", bordercolor=self.palette["border"])
+        style.map("Treeview.Heading", foreground=[("active", self.palette["text"])], background=[("active", self.palette["sky_tint_hover"])])
+        style.map("Treeview", background=[("selected", self.palette["sky_tint"])], foreground=[("selected", self.palette["text"])])
 
     def _fit_toplevel(self, win: tk.Toplevel, width: int, height: int) -> None:
         try:
@@ -338,7 +337,7 @@ class LedgerDesktopApp:
             pass
 
     def _attach_notebook_underline(self, nb: ttk.Notebook) -> None:
-        line = tk.Frame(nb, bg=self.palette["theme_line"], height=2)
+        line = tk.Frame(nb, bg=self.palette["sky_line"], height=2)
 
         def _refresh(_e=None):
             try:
