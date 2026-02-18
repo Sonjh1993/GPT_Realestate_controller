@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import money_utils
+
 # reportlab는 선택 의존성 (PDF 생성 시에만 필요)
 try:
     from reportlab.lib.pagesizes import A4
@@ -64,7 +66,22 @@ def _yn(v: Any) -> str:
     return ""
 
 
+def _last4_phone(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-4:] if digits else ""
+
+
+def _anonymize_customer(customer: dict[str, Any]) -> dict[str, Any]:
+    c = dict(customer or {})
+    if "customer_name" in c:
+        c["customer_name"] = ""
+    if "phone" in c:
+        c["phone"] = _last4_phone(c.get("phone"))
+    return c
+
+
 def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any]], *, include_links: bool = True) -> str:
+    customer = _anonymize_customer(customer)
     cname = str(customer.get("customer_name") or "").strip()
     phone = str(customer.get("phone") or "").strip()
     header = f"안녕하세요{(' ' + cname + '님') if cname else ''}.\n요청 조건 기준 추천 매물 보내드립니다.\n"
@@ -89,8 +106,14 @@ def build_kakao_message(customer: dict[str, Any], properties: list[dict[str, Any
             title = f"물건ID {p.get('id')}"
 
         detail = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            detail.append(f"가격:{price_summary}")
         if floor or total_floor:
             detail.append(f"층: {floor}/{total_floor}".strip("/"))
+        move_available = str(p.get("move_available_date") or "").strip()
+        if move_available:
+            detail.append(f"입주가능:{move_available}")
         if cond:
             detail.append(f"컨디션:{cond}")
         if ori or view:
@@ -120,16 +143,17 @@ def generate_proposal_pdf(
     *,
     customer: dict[str, Any],
     properties: list[dict[str, Any]],
-    photos_by_property: dict[int, list[str]] | None,
+    photos_by_property: dict[int, list[dict[str, str] | str]] | None,
     output_dir: Path,
     title: str = "매물 제안서",
-    max_photos_per_property: int = 1,
+    max_photos_per_property: int = 6,
 ) -> ProposalOutput:
     """Generate proposal PDF + txt message into output_dir."""
     _ensure_reportlab()
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    customer = _anonymize_customer(customer)
     cname = _safe_filename(str(customer.get("customer_name") or "고객"))
     base = f"proposal_{cname}_{ts}"
 
@@ -167,6 +191,15 @@ def generate_proposal_pdf(
         fontSize=12.5,
         leading=16,
         spaceBefore=8,
+        spaceAfter=4,
+    )
+    style_price = ParagraphStyle(
+        "price",
+        parent=styles["BodyText"],
+        fontName="HYGothic-Medium" if "HYGothic-Medium" in pdfmetrics.getRegisteredFontNames() else "HYSMyeongJo-Medium",
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#1f4e79"),
         spaceAfter=4,
     )
     style_body = ParagraphStyle(
@@ -207,7 +240,7 @@ def generate_proposal_pdf(
     photos_by_property = photos_by_property or {}
 
     # helper: scale image to fit box
-    def build_image(path: str, max_w_mm: float = 70, max_h_mm: float = 55):
+    def build_image(path: str, max_w_mm: float = 44, max_h_mm: float = 36):
         try:
             reader = ImageReader(path)
             w, h = reader.getSize()
@@ -235,6 +268,10 @@ def generate_proposal_pdf(
         elements.append(Paragraph(f"{idx}. {title_line}", style_h2))
 
         info_lines = []
+        price_summary = money_utils.property_price_summary(p)
+        if price_summary:
+            elements.append(Paragraph(f"가격: {price_summary}", style_price))
+
         area = p.get("area")
         pyeong = p.get("pyeong")
         if area:
@@ -244,6 +281,8 @@ def generate_proposal_pdf(
         if p.get("orientation") or p.get("view"):
             ov = " / ".join([str(x).strip() for x in [p.get("orientation"), p.get("view")] if str(x or "").strip()])
             info_lines.append(f"향/뷰: {ov}")
+        if p.get("move_available_date"):
+            info_lines.append(f"입주가능일: {p.get('move_available_date')}")
         if p.get("condition") or p.get("repair_needed") is not None:
             rn = _yn(p.get("repair_needed"))
             cn = str(p.get("condition") or "").strip()
@@ -255,31 +294,60 @@ def generate_proposal_pdf(
         if p.get("naver_link"):
             info_lines.append(f"링크: {p.get('naver_link')}")
 
-        left = Paragraph("<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines]), style_body)
+        detail_text = "<br/>".join([str(x).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;") for x in info_lines])
+        elements.append(Paragraph(detail_text, style_body))
+        elements.append(Spacer(1, 4))
 
-        # pick photos
-        img_paths = photos_by_property.get(pid, [])[:max_photos_per_property]
-        img_obj = build_image(img_paths[0]) if img_paths else Spacer(1, 1)
+        # 사진 우선순위: 거실 > 안방 > 작은방 > 화장실 > 주방 > 나머지
+        raw_photos = photos_by_property.get(pid, [])
+        normalized: list[dict[str, str]] = []
+        for it in raw_photos:
+            if isinstance(it, dict):
+                fp = str(it.get("file_path") or "").strip()
+                tg = str(it.get("tag") or "").strip()
+            else:
+                fp = str(it or "").strip()
+                tg = ""
+            if fp:
+                normalized.append({"file_path": fp, "tag": tg})
 
-        tbl = Table(
-            [[left, img_obj]],
-            colWidths=[115 * mm, 65 * mm],
-        )
-        tbl.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOX", (0, 0), (-1, -1), 0.4, colors.lightgrey),
-                    ("INNERGRID", (0, 0), (-1, -1), 0.2, colors.lightgrey),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ]
-            )
-        )
-        elements.append(tbl)
-        elements.append(Spacer(1, 10))
+        priority = {"거실": 0, "안방": 1, "작은방": 2, "화장실": 3, "주방": 4}
+        normalized.sort(key=lambda x: (priority.get(x.get("tag", ""), 99), x.get("tag", "")))
+        chosen = normalized[: min(max_photos_per_property, 6)]
+
+        if chosen:
+            page_w, _ = A4
+            avail = page_w - doc.leftMargin - doc.rightMargin
+            col_w = avail / 3
+            rows = [chosen[i:i+3] for i in range(0, len(chosen), 3)]
+
+            table_data: list[list[Any]] = []
+            for r in rows[:2]:
+                img_row: list[Any] = []
+                cap_row: list[Any] = []
+                for it in r:
+                    img_row.append(build_image(str(it.get("file_path") or ""), max_w_mm=(col_w / mm) - 6, max_h_mm=42))
+                    cap_row.append(Paragraph(str(it.get("tag") or "사진"), style_small))
+                while len(img_row) < 3:
+                    img_row.append(Spacer(1, 1))
+                    cap_row.append(Spacer(1, 1))
+                table_data.append(img_row)
+                table_data.append(cap_row)
+
+            img_table = Table(table_data, colWidths=[col_w, col_w, col_w])
+            img_table.setStyle(TableStyle([
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 2),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]))
+            elements.append(img_table)
+            elements.append(Spacer(1, 8))
+        else:
+            elements.append(Paragraph("사진 없음", style_small))
+            elements.append(Spacer(1, 6))
 
         # page break every ~3 items for readability
         if idx % 3 == 0 and idx != len(properties):

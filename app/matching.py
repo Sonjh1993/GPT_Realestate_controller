@@ -12,6 +12,8 @@ import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from . import money_utils
+
 
 def _to_text(v: Any) -> str:
     return "" if v is None else str(v)
@@ -65,12 +67,19 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
     - hidden/deleted는 호출자가 이미 걸러준다고 가정.
     - 점수는 단순 규칙 기반(설명 가능성 > 복잡도).
     """
-    pref_tab = _to_text(customer.get("preferred_tab")).strip()
+    pref_tab_text = _to_text(customer.get("preferred_tab")).strip()
+    pref_tabs = {t.strip() for t in pref_tab_text.split(",") if t.strip()}
     pref_area = _to_text(customer.get("preferred_area")).strip()
     pref_pyeong = _to_text(customer.get("preferred_pyeong")).strip()
     floor_pref = _to_text(customer.get("floor_preference")).strip()
     view_pref = _to_text(customer.get("view_preference")).strip()
     loc_pref = _to_text(customer.get("location_preference")).strip()
+    deal_text = _to_text(customer.get("deal_type")).strip()
+    deal_types = {t.strip() for t in deal_text.split(",") if t.strip()}
+    if not deal_types and deal_text:
+        deal_types = {deal_text}
+    budget_10m = money_utils.to_int(customer.get("budget_10m"), 0)
+    rent_budget_10man = money_utils.to_int(customer.get("wolse_rent_10man"), 0)
 
     a_min, a_max = parse_range(pref_area)
     p_min, p_max = parse_range(pref_pyeong)
@@ -79,11 +88,21 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
 
     for p in properties:
         # 탭 필터
-        if pref_tab and _to_text(p.get("tab")).strip() and pref_tab != _to_text(p.get("tab")).strip():
+        prop_tab = _to_text(p.get("tab")).strip()
+        if pref_tabs and prop_tab and prop_tab not in pref_tabs:
             continue
+
+        if deal_types:
+            if ("매매" in deal_types and p.get("deal_sale")) or ("전세" in deal_types and p.get("deal_jeonse")) or ("월세" in deal_types and p.get("deal_wolse")):
+                pass
+            else:
+                continue
 
         score = 0
         reasons: list[str] = []
+        if deal_types:
+            reasons.append("거래유형 일치")
+            score += 15
 
         # 면적/평형
         area = p.get("area")
@@ -143,6 +162,31 @@ def match_properties(customer: dict[str, Any], properties: Iterable[dict[str, An
             score += 4
         elif cond == "중":
             score += 2
+
+        budget_scores: list[int] = []
+        if "매매" in deal_types and budget_10m > 0 and p.get("deal_sale"):
+            price_10m = money_utils.eok_che_to_ten_million(p.get("price_sale_eok"), p.get("price_sale_che"))
+            if price_10m <= budget_10m:
+                budget_scores.append(18)
+            else:
+                budget_scores.append(-min(20, max(0, price_10m - budget_10m) // 2))
+        if "전세" in deal_types and budget_10m > 0 and p.get("deal_jeonse"):
+            price_10m = money_utils.eok_che_to_ten_million(p.get("price_jeonse_eok"), p.get("price_jeonse_che"))
+            if price_10m <= budget_10m:
+                budget_scores.append(18)
+            else:
+                budget_scores.append(-min(20, max(0, price_10m - budget_10m) // 2))
+        if "월세" in deal_types and rent_budget_10man > 0 and p.get("deal_wolse"):
+            p_rent_10man = money_utils.man_to_ten_man(p.get("wolse_rent_man"))
+            if p_rent_10man <= rent_budget_10man:
+                budget_scores.append(16)
+            else:
+                budget_scores.append(-min(20, max(0, p_rent_10man - rent_budget_10man)))
+
+        if budget_scores:
+            score += max(budget_scores)
+            if max(budget_scores) >= 16:
+                reasons.append("예산 범위 일치")
 
         results.append(MatchResult(property_id=int(p.get("id")), score=score, reasons=reasons, property_row=p))
 
