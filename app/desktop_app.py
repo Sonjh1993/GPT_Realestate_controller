@@ -214,11 +214,11 @@ class LedgerDesktopApp:
             pass
 
         self.palette = {
-            "bg": "#F7F9FB",
+            "bg": "#FFFFFF",
             "surface": "#FFFFFF",
             "text": "#0F172A",
             "muted": "#64748B",
-            "border": "#D6DEE8",
+            "border": "#D1D5DB",
             "theme": "#0EA5A4",
             "theme_dark": "#0F766E",
             "theme_soft": "#E6FFFB",
@@ -243,7 +243,7 @@ class LedgerDesktopApp:
 
         style.configure("TButton", font=(family, base_size), padding=(10, 6), borderwidth=1)
         style.configure("Secondary.TButton", font=(family, base_size), padding=(10, 6), background=self.palette["bg"], foreground=self.palette["text"], bordercolor=self.palette["border"])
-        style.map("Secondary.TButton", background=[("active", "#F0F4FA")])
+        style.map("Secondary.TButton", background=[("active", "#F8FAFC")])
         style.configure("Primary.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["theme"], foreground="#FFFFFF", bordercolor=self.palette["theme"])
         style.map("Primary.TButton", background=[("active", self.palette["theme_dark"])])
         style.configure("Danger.TButton", font=(family, base_size, "bold"), padding=(10, 6), background=self.palette["danger_bg"], foreground=self.palette["danger_fg"], bordercolor=self.palette["danger_border"])
@@ -254,6 +254,7 @@ class LedgerDesktopApp:
         style.map("TCombobox", bordercolor=[("focus", self.palette["theme_border"])], fieldbackground=[("readonly", self.palette["surface"]), ("!disabled", self.palette["surface"])], foreground=[("readonly", self.palette["text"]), ("!disabled", self.palette["text"])], selectbackground=[("readonly", self.palette["theme_soft"])], selectforeground=[("readonly", self.palette["text"])])
         style.configure("TCheckbutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
         style.configure("TRadiobutton", background=self.palette["bg"], foreground=self.palette["text"], font=(family, base_size))
+        style.configure("TSeparator", background=self.palette["border"])
 
         style.configure("TNotebook", background=self.palette["bg"], borderwidth=0, tabmargins=(0, 0, 0, 0))
         style.configure("TNotebook.Tab", font=(family, base_size), padding=(8, 3), background=self.palette["bg"], foreground=self.palette["muted"], borderwidth=0, relief="flat")
@@ -646,7 +647,7 @@ class LedgerDesktopApp:
         ttk.Label(top, textvariable=self.dash_vars["tasks_open"]).grid(row=row, column=9, padx=6, pady=6, sticky="w")
 
         self.sync_status_var = tk.StringVar(value="마지막 동기화: 없음")
-        ttk.Label(top, textvariable=self.sync_status_var, foreground="#2f4f4f").grid(row=3, column=0, columnspan=10, sticky="w", padx=6, pady=2)
+        ttk.Label(top, textvariable=self.sync_status_var).grid(row=3, column=0, columnspan=10, sticky="w", padx=6, pady=2)
 
         btns = ttk.Frame(top)
         btns.grid(row=4, column=0, columnspan=10, sticky="w", padx=6, pady=6)
