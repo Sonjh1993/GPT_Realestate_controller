@@ -53,6 +53,35 @@ class SyncSettings:
         return SyncSettings(webhook_url=webhook_url, sync_dir=sync_dir, export_mode=export_mode, export_ics=export_ics)
 
 
+
+
+def _last4_phone(value: Any) -> str:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    return digits[-4:] if digits else ""
+
+
+def _anonymize_value(key: str, value: Any) -> Any:
+    k = (key or "").lower()
+
+    # 이름 계열은 전부 제거
+    if "name" in k:
+        return ""
+
+    # 전화번호 계열은 뒷자리 4자리만 유지
+    if any(token in k for token in ("phone", "tel", "mobile")):
+        return _last4_phone(value)
+
+    return value
+
+
+def _anonymize_rows(rows: list[dict]) -> list[dict]:
+    out: list[dict] = []
+    for row in rows:
+        cleaned = {k: _anonymize_value(k, v) for k, v in row.items()}
+        out.append(cleaned)
+    return out
+
+
 def upload_visible_data(
     properties: list[dict],
     customers: list[dict],
@@ -78,14 +107,21 @@ def upload_visible_data(
     viewings = viewings or []
     tasks = tasks or []
 
+    # 개인정보 마스킹(이름 제거 + 전화번호 뒷4자리)
+    export_props = _anonymize_rows(visible_props)
+    export_customers = _anonymize_rows(visible_customers)
+    export_photos = _anonymize_rows(photos)
+    export_viewings = _anonymize_rows(viewings)
+    export_tasks = _anonymize_rows(tasks)
+
     # 1) Always export to files (API-less fallback)
     exported = export_all(
         sync_dir=settings.sync_dir,
-        properties=visible_props,
-        customers=visible_customers,
-        photos=photos,
-        viewings=viewings,
-        tasks=tasks,
+        properties=export_props,
+        customers=export_customers,
+        photos=export_photos,
+        viewings=export_viewings,
+        tasks=export_tasks,
         mode=settings.export_mode,
         export_ics=settings.export_ics,
     )
@@ -98,10 +134,10 @@ def upload_visible_data(
             settings.webhook_url,
             {
                 "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                "properties": visible_props,
-                "customers": visible_customers,
-                "viewings": viewings,
-                "tasks": tasks,
+                "properties": export_props,
+                "customers": export_customers,
+                "viewings": export_viewings,
+                "tasks": export_tasks,
             },
         )
 
@@ -113,26 +149,6 @@ def upload_visible_data(
         msg += "\n- CSV: properties/customers/tasks"
     if exported.get("ics"):
         msg += f"\n- calendar: {exported['ics'].name}"
-
-    if settings.webhook_url:
-        webhook_ok, webhook_msg = _post_webhook(
-            settings.webhook_url,
-            {
-                "uploaded_at": datetime.now().isoformat(timespec="seconds"),
-                "properties": visible_props,
-                "customers": visible_customers,
-                "viewings": viewings,
-                "tasks": tasks,
-            },
-        )
-
-    # 메시지 조립
-    msg = f"파일 내보내기 완료: {exported['base_dir']}"
-    if exported.get("snapshot_json"):
-        msg += f"\n- snapshot: {exported['snapshot_json'].name}"
-    if exported.get("ics"):
-        msg += f"\n- calendar: {exported['ics'].name}"
-    msg += "\n- CSV: properties/customers/tasks"
 
     if settings.webhook_url:
         if webhook_ok:
