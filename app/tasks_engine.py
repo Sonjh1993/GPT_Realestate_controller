@@ -135,7 +135,7 @@ def compute_desired_auto_tasks(
             )
 
         status = str(p.get("status") or "")
-        if status != "거래완료" and (photo_count.get(pid, 0) == 0 or status == "사진필요"):
+        if status != "계약완료" and photo_count.get(pid, 0) == 0:
             key = f"AUTO_PROP_PHOTO:{pid}"
             desired[key] = DesiredTask(
                 unique_key=key,
